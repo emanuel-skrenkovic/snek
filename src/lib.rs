@@ -1,7 +1,5 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::time;
-use js_sys::Intl::PluralRules;
 
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
@@ -103,15 +101,10 @@ fn start() -> Result<(), JsValue>
     Ok(())
 }
 
-#[derive(Debug)]
-struct Vec2 {
-    x: f32,
-    y: f32
-}
+const ASPECT_RATIO: f32 = 1.6;
 
-fn vec2(x: f32, y: f32) -> Vec2 {
-    Vec2{x, y}
-}
+const GRID_WIDTH: usize  = 64;
+const GRID_HEIGHT: usize = 40;
 
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 
@@ -161,7 +154,7 @@ fn handle_key_action(key: u32)
     unsafe {
         match key {
             87 /* w */  => {
-                let mut end_position = VERTICES.clone();
+                let mut end_position = VERTICES;
                 for i in (1..end_position.len()).step_by(3) {
                     end_position[i] += STEP;
                 }
@@ -176,7 +169,7 @@ fn handle_key_action(key: u32)
                 );
             },
             83 /* s */ => {
-                let mut end_position = VERTICES.clone();
+                let mut end_position = VERTICES;
                 for i in (1..end_position.len()).step_by(3) {
                     end_position[i] -= STEP;
                 }
@@ -191,7 +184,7 @@ fn handle_key_action(key: u32)
                 );
             },
             65 /* a */ => {
-                let mut end_position = VERTICES.clone();
+                let mut end_position = VERTICES;
                 for i in (0..end_position.len()).step_by(3) {
                     end_position[i] -= STEP;
                 }
@@ -206,7 +199,7 @@ fn handle_key_action(key: u32)
                 );
             },
             68 /* d */ => {
-                let mut end_position = VERTICES.clone();
+                let mut end_position = VERTICES;
                 for i in (0..end_position.len()).step_by(3) {
                     end_position[i] += STEP;
                 }
@@ -229,10 +222,9 @@ fn handle_key_action(key: u32)
 pub fn key_down_event(event: web_sys::KeyboardEvent) -> Result<(), JsValue>
 {
     unsafe {
-        match event.key().as_str() {
-            "w" | "s" | "a" | "d" => {
-                let code = event.key_code();
-
+        let code = event.key_code();
+        match code {
+            87 | 83 | 65 | 68 => {
                 if !KEYS.contains(&code) {
                     KEYS.push(event.key_code())
                 }
