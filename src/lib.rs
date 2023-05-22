@@ -119,8 +119,11 @@ fn start() -> Result<(), JsValue>
 
 const ASPECT_RATIO: f32 = 1.6;
 
-const GRID_WIDTH: usize  = 64;
-const GRID_HEIGHT: usize = 40;
+const GRID_WIDTH: usize  = 16;
+const GRID_HEIGHT: usize = 10;
+
+const GRID_BOX_WIDTH: f32 = 1280. / GRID_WIDTH as f32;
+const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
 
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 
@@ -140,12 +143,12 @@ impl Animation {
 
 static mut VERTICES: [f32; 12] = [
     200., 200.,
-    400., 200.,
-    200., 400.,
+    200. + GRID_BOX_WIDTH, 200.,
+    200., 200. + GRID_BOX_HEIGHT,
 
-    400., 400.,
-    200., 400.,
-    400., 200.,
+    200. + GRID_BOX_WIDTH, 200. + GRID_BOX_HEIGHT,
+    200., 200. + GRID_BOX_HEIGHT,
+    200. + GRID_BOX_WIDTH, 200.,
 ];
 
 static mut KEYS: Vec<u32> = vec![];
@@ -165,7 +168,7 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>)
 fn handle_key_action(key: u32)
 {
     const ANIMATION_DURATION: f64 = 100.;
-    const STEP: f32               = 25.;
+    const STEP: f32               = 1280. / 64.;
 
     unsafe {
         match key {
