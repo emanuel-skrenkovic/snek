@@ -21,6 +21,7 @@ features = [
     'WebGlBuffer',
     'WebGlVertexArrayObject',
     'WebGl2RenderingContext',
+    'WebGlUniformLocation',
     'WebGlProgram',
     'WebGlShader',
     'Window',

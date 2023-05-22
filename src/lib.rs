@@ -24,16 +24,25 @@ fn start() -> Result<(), JsValue>
         .unwrap()
         .dyn_into::<WebGl2RenderingContext>()?;
 
+    context.viewport(0, 0, 1280, 800);
+
     let vertex_shader = compile_shader
     (
         &context,
         WebGl2RenderingContext::VERTEX_SHADER,
         r##"#version 300 es
 
-        in vec4 position;
+        in vec2 position;
+        in vec2 translation;
+
+        uniform vec2 resolution;
 
         void main() {
-            gl_Position = position;
+            vec2 translated = position + translation;
+            vec2 zeroToOne = translated / resolution;
+            vec2 zeroToTwo = zeroToOne * 2.0;
+            vec2 clipSpace = zeroToTwo - 1.0;
+            gl_Position = vec4(clipSpace, 0, 1);
         }
         "##,
     )?;
@@ -56,6 +65,9 @@ fn start() -> Result<(), JsValue>
     let program = link_program(&context, &vertex_shader, &fragment_shader)?;
     context.use_program(Some(&program));
 
+    let resolution_location = context.get_uniform_location(&program, "resolution").unwrap();
+    context.uniform2f(Some(&resolution_location), canvas.width() as f32, canvas.height() as f32);
+
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
 
@@ -69,6 +81,8 @@ fn start() -> Result<(), JsValue>
                 handle_key_action(*active_key);
             }
 
+            let mut end_position = VERTICES;
+
             for animation in QUEUED_ANIMATIONS.iter() {
                 if animation.done() { continue }
 
@@ -76,21 +90,23 @@ fn start() -> Result<(), JsValue>
                 let interpolation_factor = (elapsed / animation.duration).min(1.);
                 let time_factor: f32     = interpolation_factor as f32;
 
-                for i in (0..vertices_count).step_by(3) {
-                    let dx = animation.end_position[i] - VERTICES[i];
-                    let dy = animation.end_position[i + 1] - VERTICES[i + 1];
+                for i in (0..vertices_count).step_by(2) {
+                    let dx = animation.end_position[i] - end_position[i];
+                    let dy = animation.end_position[i + 1] - end_position[i + 1];
 
                     let length = f32::sqrt(dx * dx + dy * dy);
-                    let angle_factor = 15.0 * length;
+                    let angle_factor = (5. * length).min(1.);
 
-                    VERTICES[i]     += angle_factor * time_factor * dx;
-                    VERTICES[i + 1] += angle_factor * time_factor * dy;
+                    end_position[i]     += angle_factor * time_factor * dx;
+                    end_position[i + 1] += angle_factor * time_factor * dy;
                 }
             }
 
-            let vert_count = (vertices_count / 3) as i32;
-            draw_vertices(&context, &program, &VERTICES).expect("Drawing failed");
+            draw_vertices(&context, &program, &VERTICES, &end_position).expect("Drawing failed");
+            let vert_count = (vertices_count / 2) as i32;
             render(&context, vert_count);
+
+            VERTICES = end_position;
 
             request_animation_frame(f.borrow().as_ref().unwrap());
         }));
@@ -112,24 +128,24 @@ struct Animation
 {
     start_time: f64,
     duration: f64,
-    end_position: [f32;18]
+    end_position: [f32;12]
 }
 
 impl Animation {
     fn done(&self) -> bool
     {
-        (js_sys::Date::now() - self.start_time) >= self.duration
+        (js_sys::Date::now() - self.start_time) > self.duration
     }
 }
 
-static mut VERTICES: [f32; 18] = [
-   -0.1, -0.1, 0.0,
-    0.1, -0.1, 0.0,
-   -0.1,  0.1, 0.0,
+static mut VERTICES: [f32; 12] = [
+    200., 200.,
+    400., 200.,
+    200., 400.,
 
-    0.1,  0.1, 0.0,
-   -0.1,  0.1, 0.0,
-    0.1, -0.1, 0.0,
+    400., 400.,
+    200., 400.,
+    400., 200.,
 ];
 
 static mut KEYS: Vec<u32> = vec![];
@@ -149,13 +165,13 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>)
 fn handle_key_action(key: u32)
 {
     const ANIMATION_DURATION: f64 = 100.;
-    const STEP: f32               = 0.025;
+    const STEP: f32               = 25.;
 
     unsafe {
         match key {
             87 /* w */  => {
                 let mut end_position = VERTICES;
-                for i in (1..end_position.len()).step_by(3) {
+                for i in (1..end_position.len()).step_by(2) {
                     end_position[i] += STEP;
                 }
 
@@ -170,7 +186,7 @@ fn handle_key_action(key: u32)
             },
             83 /* s */ => {
                 let mut end_position = VERTICES;
-                for i in (1..end_position.len()).step_by(3) {
+                for i in (1..end_position.len()).step_by(2) {
                     end_position[i] -= STEP;
                 }
 
@@ -185,7 +201,7 @@ fn handle_key_action(key: u32)
             },
             65 /* a */ => {
                 let mut end_position = VERTICES;
-                for i in (0..end_position.len()).step_by(3) {
+                for i in (0..end_position.len()).step_by(2) {
                     end_position[i] -= STEP;
                 }
 
@@ -200,7 +216,7 @@ fn handle_key_action(key: u32)
             },
             68 /* d */ => {
                 let mut end_position = VERTICES;
-                for i in (0..end_position.len()).step_by(3) {
+                for i in (0..end_position.len()).step_by(2) {
                     end_position[i] += STEP;
                 }
 
@@ -252,9 +268,12 @@ pub fn key_up_event(event: web_sys::KeyboardEvent) -> Result<(), JsValue>
 fn draw_vertices(
     context: &WebGl2RenderingContext,
     program: &WebGlProgram,
-    vertices: &[f32]
+    vertices: &[f32],
+    translation: &[f32]
 ) -> Result<(), String>
 {
+    // Position
+
     let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
     context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
 
@@ -271,7 +290,30 @@ fn draw_vertices(
     context.bind_vertex_array(Some(&vao));
 
     let position_attribute_location = context.get_attrib_location(program, "position");
-    context.vertex_attrib_pointer_with_i32(position_attribute_location as u32, 3, WebGl2RenderingContext::FLOAT, false, 0, 0);
+    context.vertex_attrib_pointer_with_i32(position_attribute_location as u32, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
+    context.enable_vertex_attrib_array(position_attribute_location as u32);
+
+    context.bind_vertex_array(Some(&vao));
+
+    // Translation
+
+    let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
+    context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
+
+    let positions_array_buf = js_sys::Float32Array::new_with_length(vertices.len() as u32);
+    positions_array_buf.copy_from(translation);
+
+    context.buffer_data_with_array_buffer_view(
+        WebGl2RenderingContext::ARRAY_BUFFER,
+        &positions_array_buf,
+        WebGl2RenderingContext::DYNAMIC_DRAW,
+    );
+
+    let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
+    context.bind_vertex_array(Some(&vao));
+
+    let position_attribute_location = context.get_attrib_location(program, "translation");
+    context.vertex_attrib_pointer_with_i32(position_attribute_location as u32, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
     context.enable_vertex_attrib_array(position_attribute_location as u32);
 
     context.bind_vertex_array(Some(&vao));
