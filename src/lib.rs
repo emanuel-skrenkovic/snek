@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::ops::Index;
 
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
@@ -8,6 +9,13 @@ use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
+}
+
+struct Context
+{
+    window_height: f32,
+    window_width: f32,
+    snake_pos: Vec<f32>
 }
 
 #[wasm_bindgen(start)]
@@ -57,7 +65,7 @@ fn start() -> Result<(), JsValue>
         out vec4 outColor;
 
         void main() {
-            outColor = vec4(1, 1, 1, 1);
+            outColor = vec4(0.1, 0.5, 0.1, 1);
         }
         "##
     )?;
@@ -65,23 +73,43 @@ fn start() -> Result<(), JsValue>
     let program = link_program(&context, &vertex_shader, &fragment_shader)?;
     context.use_program(Some(&program));
 
+    let window_width = canvas.width() as f32;
+    let window_height = canvas.height() as f32;
+
     let resolution_location = context.get_uniform_location(&program, "resolution").unwrap();
-    context.uniform2f(Some(&resolution_location), canvas.width() as f32, canvas.height() as f32);
+    context.uniform2f(Some(&resolution_location), window_width, window_height);
 
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
 
     unsafe {
-        let vertices_count = VERTICES.len();
+        let mut ctx = Context {
+            window_width,
+            window_height,
+            snake_pos: create_box
+            (
+                window_width / 2.,
+                window_height / 2.,
+                GRID_BOX_WIDTH,
+                GRID_BOX_HEIGHT,
+            )
+        };
 
         *g.borrow_mut() = Some(Closure::new(move || {
+            let mut vertices_count = ctx.snake_pos.len();
+
             QUEUED_ANIMATIONS.retain(|a| !a.done());
 
             for active_key in &KEYS {
-                handle_key_action(*active_key);
+                handle_key_action(&mut ctx, *active_key);
             }
 
-            let mut end_position = VERTICES;
+            if ctx.snake_pos[0] > ctx.window_width {
+                ctx.snake_pos = create_box(0., ctx.snake_pos[1], GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            }
+
+            let mut renders: Vec<(Vec<f32>, Vec<f32>)> = vec![];
+            let mut end_position = ctx.snake_pos.clone();
 
             for animation in QUEUED_ANIMATIONS.iter() {
                 if animation.done() { continue }
@@ -93,20 +121,82 @@ fn start() -> Result<(), JsValue>
                 for i in (0..vertices_count).step_by(2) {
                     let dx = animation.end_position[i] - end_position[i];
                     let dy = animation.end_position[i + 1] - end_position[i + 1];
+                    end_position[i]     += time_factor * dx;
+                    end_position[i + 1] += time_factor * dy;
 
-                    let length = f32::sqrt(dx * dx + dy * dy);
-                    let angle_factor = (5. * length).min(1.);
+                    // let length = f32::sqrt(dx * dx + dy * dy);
+                    // let angle_factor = (1. * length).min(1.);
 
-                    end_position[i]     += angle_factor * time_factor * dx;
-                    end_position[i + 1] += angle_factor * time_factor * dy;
+                    // end_position[i]     += angle_factor * time_factor * dx;
+                    // end_position[i + 1] += angle_factor * time_factor * dy;
                 }
             }
 
-            draw_vertices(&context, &program, &VERTICES, &end_position).expect("Drawing failed");
-            let vert_count = (vertices_count / 2) as i32;
-            render(&context, vert_count);
+            renders.push((ctx.snake_pos.clone(), end_position.clone()));
 
-            VERTICES = end_position;
+            if end_position[0] >= ctx.window_width {
+                // end_position = create_box(0., end_position[1], GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                end_position = create_box(0., end_position[1], GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            }
+
+            let x = end_position[0];
+            let y = end_position[1];
+
+            if x + GRID_BOX_WIDTH > ctx.window_width {
+                let width = (x + GRID_BOX_WIDTH) - ctx.window_width;
+                let width = width.min(GRID_BOX_WIDTH);
+
+                let vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
+                renders.push((vertices.clone(), vertices.clone()));
+
+                // end_position = create_box(x, y, GRID_BOX_WIDTH - width, GRID_BOX_HEIGHT);
+            }
+
+            if end_position[0] + GRID_BOX_WIDTH <= 0. {
+                end_position = create_box(ctx.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            }
+
+            if end_position[0] < 0. {
+                let hidden_width = 0. - end_position[0];
+                let vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
+                renders.push((vertices.clone(), vertices.clone()));
+            }
+
+            // Above
+
+            if y > ctx.window_height {
+                end_position = create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            }
+
+            if y + GRID_BOX_HEIGHT > ctx.window_height {
+                let height = y - ctx.window_height;
+                let vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                renders.push((vertices.clone(), vertices.clone()));
+            }
+
+            // Below
+
+            if y + GRID_BOX_HEIGHT < 0. {
+                end_position = create_box(x, ctx.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            }
+
+            if y < 0. {
+                let height = y.abs();
+                let vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                renders.push((vertices.clone(), vertices.clone()));
+            }
+
+            context.clear_color(0.0, 0.0, 0.0, 1.0);
+            context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+
+            // log(&format!("renders: {:?}", renders));
+
+            for (initial, resulting) in &renders {
+                draw_vertices(&context, &program, initial, resulting).expect("Drawing failed");
+                render(&context, (initial.len() / 2) as i32);
+            }
+
+            ctx.snake_pos = end_position;
 
             request_animation_frame(f.borrow().as_ref().unwrap());
         }));
@@ -115,6 +205,19 @@ fn start() -> Result<(), JsValue>
     }
 
     Ok(())
+}
+
+fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
+{
+    vec![
+        x,         y,
+        x + width, y,
+        x,         y + height,
+
+        x + width, y + height,
+        x,         y + height,
+        x + width, y
+    ]
 }
 
 const ASPECT_RATIO: f32 = 1.6;
@@ -129,9 +232,10 @@ static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 
 struct Animation
 {
+    key_code: u32,
     start_time: f64,
     duration: f64,
-    end_position: [f32;12]
+    end_position: Vec<f32>
 }
 
 impl Animation {
@@ -140,16 +244,6 @@ impl Animation {
         (js_sys::Date::now() - self.start_time) > self.duration
     }
 }
-
-static mut VERTICES: [f32; 12] = [
-    200., 200.,
-    200. + GRID_BOX_WIDTH, 200.,
-    200., 200. + GRID_BOX_HEIGHT,
-
-    200. + GRID_BOX_WIDTH, 200. + GRID_BOX_HEIGHT,
-    200., 200. + GRID_BOX_HEIGHT,
-    200. + GRID_BOX_WIDTH, 200.,
-];
 
 static mut KEYS: Vec<u32> = vec![];
 
@@ -165,15 +259,19 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>)
         .expect("should register `requestAnimationFrame` OK");
 }
 
-fn handle_key_action(key: u32)
+fn handle_key_action(ctx: &mut Context, key: u32)
 {
-    const ANIMATION_DURATION: f64 = 100.;
-    const STEP: f32               = 1280. / 64.;
+    const ANIMATION_DURATION: f64 = 1000.;
+    // const STEP: f32               = 1280. / 64.;
+    // const STEP: f32 = 16.;
+    const STEP: f32 = GRID_BOX_WIDTH;
 
     unsafe {
         match key {
             87 /* w */  => {
-                let mut end_position = VERTICES;
+                if QUEUED_ANIMATIONS.iter().any(|a| a.key_code == 87) { return }
+
+                let mut end_position = ctx.snake_pos.clone();
                 for i in (1..end_position.len()).step_by(2) {
                     end_position[i] += STEP;
                 }
@@ -181,6 +279,7 @@ fn handle_key_action(key: u32)
                 QUEUED_ANIMATIONS.push
                 (
                     Animation {
+                        key_code: key,
                         start_time: js_sys::Date::now(),
                         duration: ANIMATION_DURATION,
                         end_position,
@@ -188,7 +287,9 @@ fn handle_key_action(key: u32)
                 );
             },
             83 /* s */ => {
-                let mut end_position = VERTICES;
+                if QUEUED_ANIMATIONS.iter().any(|a| a.key_code == 83) { return }
+
+                let mut end_position = ctx.snake_pos.clone();
                 for i in (1..end_position.len()).step_by(2) {
                     end_position[i] -= STEP;
                 }
@@ -196,6 +297,7 @@ fn handle_key_action(key: u32)
                 QUEUED_ANIMATIONS.push
                 (
                     Animation {
+                        key_code: key,
                         start_time: js_sys::Date::now(),
                         duration: ANIMATION_DURATION,
                         end_position,
@@ -203,7 +305,9 @@ fn handle_key_action(key: u32)
                 );
             },
             65 /* a */ => {
-                let mut end_position = VERTICES;
+                if QUEUED_ANIMATIONS.iter().any(|a| a.key_code == 65) { return }
+
+                let mut end_position = ctx.snake_pos.clone();
                 for i in (0..end_position.len()).step_by(2) {
                     end_position[i] -= STEP;
                 }
@@ -211,6 +315,7 @@ fn handle_key_action(key: u32)
                 QUEUED_ANIMATIONS.push
                 (
                     Animation {
+                        key_code: key,
                         start_time: js_sys::Date::now(),
                         duration: ANIMATION_DURATION,
                         end_position
@@ -218,7 +323,9 @@ fn handle_key_action(key: u32)
                 );
             },
             68 /* d */ => {
-                let mut end_position = VERTICES;
+                if QUEUED_ANIMATIONS.iter().any(|a| a.key_code == 68) { return }
+
+                let mut end_position = ctx.snake_pos.clone();
                 for i in (0..end_position.len()).step_by(2) {
                     end_position[i] += STEP;
                 }
@@ -226,6 +333,7 @@ fn handle_key_action(key: u32)
                 QUEUED_ANIMATIONS.push
                 (
                     Animation {
+                        key_code: key,
                         start_time: js_sys::Date::now(),
                         duration: ANIMATION_DURATION,
                         end_position
@@ -303,7 +411,7 @@ fn draw_vertices(
     let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
     context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
 
-    let positions_array_buf = js_sys::Float32Array::new_with_length(vertices.len() as u32);
+    let positions_array_buf = js_sys::Float32Array::new_with_length(translation.len() as u32);
     positions_array_buf.copy_from(translation);
 
     context.buffer_data_with_array_buffer_view(
@@ -326,8 +434,8 @@ fn draw_vertices(
 
 fn render(context: &WebGl2RenderingContext, vert_count: i32)
 {
-    context.clear_color(0.0, 0.0, 0.0, 1.0);
-    context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+    // context.clear_color(0.0, 0.0, 0.0, 1.0);
+    // context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
     context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vert_count);
 }
 
@@ -385,5 +493,61 @@ pub fn link_program(
             context.get_program_info_log(&program)
                 .unwrap_or_else(|| String::from("Unknown error creating program object"))
         )
+    }
+}
+
+// [
+//     [20.0, 400.0, 100.0, 400.0, 20.0, 480.0, 100.0, 480.0, 20.0, 480.0, 100.0, 400.0],
+//     [20.0, 400.0, 100.0, 400.0, 20.0, 480.0, 100.0, 480.0, 20.0, 480.0, 100.0, 400.0]
+// ]
+//
+// [
+//     [1264.0, 400.0, 1344.0, 400.0, 1264.0, 480.0, 1344.0, 480.0, 1264.0, 480.0, 1344.0, 400.0],
+//     [1264.0, 400.0, 1344.0, 400.0, 1264.0, 480.0, 1344.0, 480.0, 1264.0, 480.0, 1344.0, 400.0],
+//
+//     [0.0, 400.0, 64.0, 400.0, 0.0, 480.0, 64.0, 480.0, 0.0, 480.0, 64.0, 400.0],
+//     [0.0, 400.0, 64.0, 400.0, 0.0, 480.0, 64.0, 480.0, 0.0, 480.0, 64.0, 400.0]
+// ]
+
+
+
+// [
+//     [60.0, 400.0, 140.0, 400.0, 60.0, 480.0, 140.0, 480.0, 60.0, 480.0, 140.0, 400.0],
+//     [60.0, 400.0, 140.0, 400.0, 60.0, 480.0, 140.0, 480.0, 60.0, 480.0, 140.0, 400.0]
+// ]
+//
+// [
+//     [1268.0, 400.0, 1348.0, 400.0, 1268.0, 480.0, 1348.0, 480.0, 1268.0, 480.0, 1348.0, 400.0],
+//     [1268.0, 400.0, 1348.0, 400.0, 1268.0, 480.0, 1348.0, 480.0, 1268.0, 480.0, 1348.0, 400.0],
+//
+//     [0.0, 400.0, 68.0, 400.0, 0.0, 480.0, 68.0, 480.0, 0.0, 480.0, 68.0, 400.0],
+//     [0.0, 400.0, 68.0, 400.0, 0.0, 480.0, 68.0, 480.0, 0.0, 480.0, 68.0, 400.0]
+// ]
+
+#[test]
+fn test()
+{
+    let mut end_position = vec![1264.0, 400.0, 1344.0, 400.0, 1264.0, 480.0, 1344.0, 480.0, 1264.0, 480.0, 1344.0, 400.0];
+    let snake_pos = vec![0.0, 400.0, 64.0, 400.0, 0.0, 480.0, 64.0, 480.0, 0.0, 480.0, 64.0, 400.0];
+
+    let mut renders: Vec<(Vec<f32>, Vec<f32>)> = vec![];
+
+    for _ in 0..5 {
+        let x = end_position[0];
+        let y = end_position[1];
+
+        if x > 1280. {
+            let vertices = create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            end_position = vertices.clone();
+            renders.push((snake_pos.clone(), vertices.clone()));
+        }
+
+        if x + GRID_BOX_WIDTH > 1280. {
+            let width    = (x + GRID_BOX_WIDTH) - 1280.;
+            let width    = width.min(GRID_BOX_WIDTH);
+            let vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
+            end_position = vertices;
+            // renders.push((vertices.clone(), vertices.clone()));
+        }
     }
 }
