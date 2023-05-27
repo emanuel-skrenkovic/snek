@@ -108,19 +108,17 @@ fn start() -> Result<(), JsValue>
             for animation in QUEUED_ANIMATIONS.iter() {
                 if animation.done() { continue }
 
+                // Calculate the difference once per animation
+                // as it is the same for every point.
+                let dx = animation.end_position[0] - animation.start_position[0];
+                let dy = animation.end_position[1] - animation.start_position[1];
+
                 let elapsed              = js_sys::Date::now() - animation.start_time;
-                let interpolation_factor = elapsed / animation.duration;
-                let interpolation_factor = interpolation_factor as f32;
+                let interpolation_factor = (elapsed / animation.duration) as f32;
 
                 for i in (0..vertices_count).step_by(2) {
-                    let start_x = animation.start_position[i];
-                    let start_y = animation.start_position[i + 1];
-
-                    let dx = animation.end_position[i] - start_x;
-                    let dy = animation.end_position[i + 1] - start_y;
-
-                    end_position[i]     = ((start_x + dx * interpolation_factor) / 10.).round() * 10.;
-                    end_position[i + 1] = ((start_y + dy * interpolation_factor) / 10.).round() * 10.;
+                    end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
+                    end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
                 }
             }
 
