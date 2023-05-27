@@ -1,6 +1,5 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::ops::Index;
 
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
@@ -83,20 +82,20 @@ fn start() -> Result<(), JsValue>
     let g = f.clone();
 
     unsafe {
+        let starting_pos = create_box
+        (
+            ((window_width / 2.) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH,
+            ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
+            GRID_BOX_WIDTH,
+            GRID_BOX_HEIGHT,
+        );
         let mut ctx = Context {
             window_width,
             window_height,
-            snake_pos: create_box
-            (
-                window_width - GRID_BOX_WIDTH,
-                window_height - GRID_BOX_HEIGHT,
-                GRID_BOX_WIDTH,
-                GRID_BOX_HEIGHT,
-            )
+            snake_pos: starting_pos
         };
 
         *g.borrow_mut() = Some(Closure::new(move || {
-            let mut vertices_count = ctx.snake_pos.len();
 
             QUEUED_ANIMATIONS.retain(|a| !a.done());
 
@@ -105,6 +104,7 @@ fn start() -> Result<(), JsValue>
             let mut renders: Vec<(Vec<f32>, Vec<f32>)> = vec![];
             let mut end_position = ctx.snake_pos.clone();
 
+            let vertices_count = ctx.snake_pos.len();
             for animation in QUEUED_ANIMATIONS.iter() {
                 if animation.done() { continue }
 
@@ -139,7 +139,7 @@ fn start() -> Result<(), JsValue>
                 let width = width.min(GRID_BOX_WIDTH);
 
                 let vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
-                renders.push((vertices.clone(), vertices.clone()));
+                renders.push((vertices.clone(), vertices));
 
                 // end_position = create_box(x, y, GRID_BOX_WIDTH - width, GRID_BOX_HEIGHT);
             }
@@ -151,7 +151,7 @@ fn start() -> Result<(), JsValue>
             if x <= 0. {
                 let hidden_width = 0. - x;
                 let vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
-                renders.push((vertices.clone(), vertices.clone()));
+                renders.push((vertices.clone(), vertices));
             }
 
             // Above
@@ -163,7 +163,7 @@ fn start() -> Result<(), JsValue>
             if y + GRID_BOX_HEIGHT >= ctx.window_height {
                 let height = y - ctx.window_height;
                 let vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                renders.push((vertices.clone(), vertices.clone()));
+                renders.push((vertices.clone(), vertices));
             }
 
             // Below
@@ -175,7 +175,7 @@ fn start() -> Result<(), JsValue>
             if y <= 0. {
                 let height = y.abs();
                 let vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                renders.push((vertices.clone(), vertices.clone()));
+                renders.push((vertices.clone(), vertices));
             }
 
             context.clear_color(0.1, 0.2, 0.1, 1.0);
@@ -211,7 +211,7 @@ fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
     ]
 }
 
-const ASPECT_RATIO: f32 = 1.6;
+// const ASPECT_RATIO: f32 = 1.6;
 
 const GRID_WIDTH: usize  = 16;
 const GRID_HEIGHT: usize = 10;
@@ -223,7 +223,6 @@ static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 
 struct Animation
 {
-    key_code: u32,
     start_time: f64,
     duration: f64,
     start_position: Vec<f32>,
@@ -272,7 +271,6 @@ fn handle_key_action(ctx: &mut Context, key: u32)
                 QUEUED_ANIMATIONS.push
                 (
                     Animation {
-                        key_code: key,
                         start_time: js_sys::Date::now(),
                         duration: ANIMATION_DURATION,
                         start_position: ctx.snake_pos.clone(),
@@ -289,7 +287,6 @@ fn handle_key_action(ctx: &mut Context, key: u32)
                 QUEUED_ANIMATIONS.push
                 (
                     Animation {
-                        key_code: key,
                         start_time: js_sys::Date::now(),
                         duration: ANIMATION_DURATION,
                         start_position: ctx.snake_pos.clone(),
@@ -306,7 +303,6 @@ fn handle_key_action(ctx: &mut Context, key: u32)
                 QUEUED_ANIMATIONS.push
                 (
                     Animation {
-                        key_code: key,
                         start_time: js_sys::Date::now(),
                         duration: ANIMATION_DURATION,
                         start_position: ctx.snake_pos.clone(),
@@ -323,7 +319,6 @@ fn handle_key_action(ctx: &mut Context, key: u32)
                 QUEUED_ANIMATIONS.push
                 (
                     Animation {
-                        key_code: key,
                         start_time: js_sys::Date::now(),
                         duration: ANIMATION_DURATION,
                         start_position: ctx.snake_pos.clone(),
