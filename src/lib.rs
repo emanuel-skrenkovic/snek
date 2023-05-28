@@ -322,7 +322,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
 }
 
 #[wasm_bindgen]
-pub fn key_down_event(event: web_sys::KeyboardEvent) -> Result<(), JsValue>
+pub fn key_down_event(event: web_sys::KeyboardEvent)
 {
     unsafe {
         let code = event.key_code();
@@ -335,19 +335,17 @@ pub fn key_down_event(event: web_sys::KeyboardEvent) -> Result<(), JsValue>
             _   => ()
         }
     }
-
-    Ok(())
 }
 
+/// Stores the event into the global state that holds all
+/// queued events.
 #[wasm_bindgen]
-pub unsafe fn key_up_event(event: web_sys::KeyboardEvent) -> Result<(), JsValue>
+pub unsafe fn key_up_event(event: web_sys::KeyboardEvent)
 {
     match event.key().as_str() {
         "w" | "s" | "a" | "d" => KEYS.retain(|c| c != &event.key_code()),
         _   => ()
     }
-
-    Ok(())
 }
 
 fn draw_vertices(
@@ -359,49 +357,53 @@ fn draw_vertices(
 {
     // Position
 
-    let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
-    context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
+    {
+        let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
+        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
 
-    let positions_array_buf = js_sys::Float32Array::new_with_length(vertices.len() as u32);
-    positions_array_buf.copy_from(vertices);
+        let positions_array_buf = js_sys::Float32Array::new_with_length(vertices.len() as u32);
+        positions_array_buf.copy_from(vertices);
 
-    context.buffer_data_with_array_buffer_view(
-        WebGl2RenderingContext::ARRAY_BUFFER,
-        &positions_array_buf,
-        WebGl2RenderingContext::DYNAMIC_DRAW,
-    );
+        context.buffer_data_with_array_buffer_view(
+            WebGl2RenderingContext::ARRAY_BUFFER,
+            &positions_array_buf,
+            WebGl2RenderingContext::DYNAMIC_DRAW,
+        );
 
-    let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
-    context.bind_vertex_array(Some(&vao));
+        let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
+        context.bind_vertex_array(Some(&vao));
 
-    let position_attribute_location = context.get_attrib_location(program, "position");
-    context.vertex_attrib_pointer_with_i32(position_attribute_location as u32, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
-    context.enable_vertex_attrib_array(position_attribute_location as u32);
+        let position_attribute_location = context.get_attrib_location(program, "position") as u32;
+        context.vertex_attrib_pointer_with_i32(position_attribute_location, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
+        context.enable_vertex_attrib_array(position_attribute_location);
 
-    context.bind_vertex_array(Some(&vao));
+        context.bind_vertex_array(Some(&vao));
+    }
 
     // Translation
 
-    let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
-    context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
+    {
+        let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
+        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
 
-    let positions_array_buf = js_sys::Float32Array::new_with_length(translation.len() as u32);
-    positions_array_buf.copy_from(translation);
+        let positions_array_buf = js_sys::Float32Array::new_with_length(translation.len() as u32);
+        positions_array_buf.copy_from(translation);
 
-    context.buffer_data_with_array_buffer_view(
-        WebGl2RenderingContext::ARRAY_BUFFER,
-        &positions_array_buf,
-        WebGl2RenderingContext::DYNAMIC_DRAW,
-    );
+        context.buffer_data_with_array_buffer_view(
+            WebGl2RenderingContext::ARRAY_BUFFER,
+            &positions_array_buf,
+            WebGl2RenderingContext::DYNAMIC_DRAW,
+        );
 
-    let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
-    context.bind_vertex_array(Some(&vao));
+        let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
+        context.bind_vertex_array(Some(&vao));
 
-    let position_attribute_location = context.get_attrib_location(program, "translation");
-    context.vertex_attrib_pointer_with_i32(position_attribute_location as u32, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
-    context.enable_vertex_attrib_array(position_attribute_location as u32);
+        let position_attribute_location = context.get_attrib_location(program, "translation") as u32;
+        context.vertex_attrib_pointer_with_i32(position_attribute_location, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
+        context.enable_vertex_attrib_array(position_attribute_location);
 
-    context.bind_vertex_array(Some(&vao));
+        context.bind_vertex_array(Some(&vao));
+    }
 
     Ok(())
 }
