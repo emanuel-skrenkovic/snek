@@ -92,6 +92,7 @@ fn start() -> Result<(), JsValue>
             GRID_BOX_WIDTH,
             GRID_BOX_HEIGHT,
         );
+
         let mut ctx = Context {
             window_width,
             window_height,
@@ -99,97 +100,12 @@ fn start() -> Result<(), JsValue>
         };
 
         *g.borrow_mut() = Some(Closure::new(move || {
-            QUEUED_ANIMATIONS.retain(|a| !a.done());
-
-            for active_key in &KEYS {
-                handle_key_action(&mut ctx, *active_key);
+            if PAUSED {
+                request_animation_frame(f.borrow().as_ref().unwrap());
+                return
             }
 
-            let mut end_position = ctx.snake_pos.clone();
-
-            for animation in QUEUED_ANIMATIONS.iter() {
-                if animation.done() { continue }
-
-                // Calculate the difference once per animation
-                // as it is the same for every point.
-                let dx = animation.end_position[0] - animation.start_position[0];
-                let dy = animation.end_position[1] - animation.start_position[1];
-
-                let elapsed              = js_sys::Date::now() - animation.start_time;
-                let interpolation_factor = (elapsed / animation.duration) as f32;
-
-                for i in (0..ctx.snake_pos.len()).step_by(2) {
-                    end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
-                    end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
-                }
-            }
-
-            initial.append(&mut ctx.snake_pos.clone());
-            resulting.append(&mut end_position.clone());
-
-            let x = end_position[0];
-            let y = end_position[1];
-
-            if x >= ctx.window_width {
-                end_position = create_box(0., end_position[1], GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-            }
-
-            if x + GRID_BOX_WIDTH > ctx.window_width {
-                let width = (x + GRID_BOX_WIDTH) - ctx.window_width;
-                let width = width.min(GRID_BOX_WIDTH);
-
-                let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
-                initial.append(&mut vertices.clone());
-                resulting.append(&mut vertices);
-            }
-
-            if x + GRID_BOX_WIDTH <= 0. {
-                end_position = create_box(ctx.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-            }
-
-            if x <= 0. {
-                let hidden_width = 0. - x;
-                let mut vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
-                initial.append(&mut vertices.clone());
-                resulting.append(&mut vertices);
-            }
-
-            // Above
-
-            if y >= ctx.window_height {
-                end_position = create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-            }
-
-            if y + GRID_BOX_HEIGHT >= ctx.window_height {
-                let height = y - ctx.window_height;
-                let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                initial.append(&mut vertices.clone());
-                resulting.append(&mut vertices);
-            }
-
-            // Below
-
-            if y + GRID_BOX_HEIGHT <= 0. {
-                end_position = create_box(x, ctx.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-            }
-
-            if y <= 0. {
-                let height = y.abs();
-                let mut vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                initial.append(&mut vertices.clone());
-                resulting.append(&mut vertices);
-            }
-
-            context.clear_color(0.1, 0.2, 0.1, 1.0);
-            context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-
-            let vertices_count = (initial.len() / 2) as i32;
-            draw_vertices(&context, &program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
-                .expect("Drawing failed");
-            context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
-
-            ctx.snake_pos = end_position;
-
+            update(&mut ctx, &context, &program, &mut initial, &mut resulting);
             request_animation_frame(f.borrow().as_ref().unwrap());
         }));
 
@@ -197,6 +113,106 @@ fn start() -> Result<(), JsValue>
     }
 
     Ok(())
+}
+
+unsafe fn update(
+    ctx: &mut Context,
+    rendering_context: &WebGl2RenderingContext,
+    program: &WebGlProgram,
+    initial: &mut Vec<f32>,
+    resulting: &mut Vec<f32>
+)
+{
+    QUEUED_ANIMATIONS.retain(|a| !a.done());
+
+    for active_key in &KEYS {
+        handle_key_action(ctx, *active_key);
+    }
+
+    let mut end_position = ctx.snake_pos.clone();
+
+    for animation in QUEUED_ANIMATIONS.iter() {
+        if animation.done() { continue }
+
+        // Calculate the difference once per animation
+        // as it is the same for every point.
+        let dx = animation.end_position[0] - animation.start_position[0];
+        let dy = animation.end_position[1] - animation.start_position[1];
+
+        let elapsed              = js_sys::Date::now() - animation.start_time;
+        let interpolation_factor = (elapsed / animation.duration) as f32;
+
+        for i in (0..ctx.snake_pos.len()).step_by(2) {
+            end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
+            end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
+        }
+    }
+
+    initial.append(&mut ctx.snake_pos.clone());
+    resulting.append(&mut end_position.clone());
+
+    let x = end_position[0];
+    let y = end_position[1];
+
+    if x >= ctx.window_width {
+        end_position = create_box(0., end_position[1], GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+    }
+
+    if x + GRID_BOX_WIDTH > ctx.window_width {
+        let width = (x + GRID_BOX_WIDTH) - ctx.window_width;
+        let width = width.min(GRID_BOX_WIDTH);
+
+        let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
+        initial.append(&mut vertices.clone());
+        resulting.append(&mut vertices);
+    }
+
+    if x + GRID_BOX_WIDTH <= 0. {
+        end_position = create_box(ctx.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+    }
+
+    if x <= 0. {
+        let hidden_width = 0. - x;
+        let mut vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
+        initial.append(&mut vertices.clone());
+        resulting.append(&mut vertices);
+    }
+
+    // Above
+
+    if y >= ctx.window_height {
+        end_position = create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+    }
+
+    if y + GRID_BOX_HEIGHT >= ctx.window_height {
+        let height = y - ctx.window_height;
+        let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+        initial.append(&mut vertices.clone());
+        resulting.append(&mut vertices);
+    }
+
+    // Below
+
+    if y + GRID_BOX_HEIGHT <= 0. {
+        end_position = create_box(x, ctx.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+    }
+
+    if y <= 0. {
+        let height = y.abs();
+        let mut vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+        initial.append(&mut vertices.clone());
+        resulting.append(&mut vertices);
+    }
+
+    rendering_context.clear_color(0.1, 0.2, 0.1, 1.0);
+    rendering_context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+
+    let vertices_count = (initial.len() / 2) as i32;
+    draw_vertices(rendering_context, program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
+        .expect("Drawing failed");
+    rendering_context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
+
+    ctx.snake_pos = end_position;
 }
 
 fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
@@ -222,6 +238,7 @@ const ANIMATION_DURATION: f64 = 200.;
 const STEP: f32 = GRID_BOX_WIDTH;
 
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
+static mut PAUSED: bool = false;
 
 struct Animation
 {
@@ -321,23 +338,26 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                 }
             );
         },
+        32 /* space */ => PAUSED = !PAUSED,
         _   => ()
     }
 }
 
+/// Registers the pressed key as an event if
+/// it is a part of the logic.
+/// Stores the pressed key code in global state
+/// if it is not already present.
 #[wasm_bindgen]
-pub fn key_down_event(event: web_sys::KeyboardEvent)
+pub unsafe fn key_down_event(event: web_sys::KeyboardEvent)
 {
-    unsafe {
-        let code = event.key_code();
-        match code {
-            87 | 83 | 65 | 68 => {
-                if !KEYS.contains(&code) {
-                    KEYS.push(event.key_code())
-                }
-            },
-            _   => ()
-        }
+    let code = event.key_code();
+    match code {
+        87 | 83 | 65 | 68 => { // wasd
+            if !KEYS.contains(&code) {
+                KEYS.push(event.key_code())
+            }
+        },
+        _   => ()
     }
 }
 
@@ -346,8 +366,23 @@ pub fn key_down_event(event: web_sys::KeyboardEvent)
 #[wasm_bindgen]
 pub unsafe fn key_up_event(event: web_sys::KeyboardEvent)
 {
-    match event.key().as_str() {
-        "w" | "s" | "a" | "d" => KEYS.retain(|c| c != &event.key_code()),
+    let code = event.key_code();
+    match code {
+        87 | 83 | 65 | 68 => KEYS.retain(|c| c != &code),
+        _ => ()
+    }
+}
+
+/// Stores the event into the global state that holds all
+/// queued events. This is used for the 'keypress' dom event.
+#[wasm_bindgen]
+pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
+{
+    let code = event.key_code();
+    match code {
+        32 => { // space
+            PAUSED = !PAUSED
+        }
         _   => ()
     }
 }
