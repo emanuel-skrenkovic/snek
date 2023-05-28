@@ -14,7 +14,7 @@ struct Context
 {
     window_height: f32,
     window_width: f32,
-    snake_pos: Vec<f32>
+    snake_head_pos: Vec<f32>
 }
 
 #[wasm_bindgen(start)]
@@ -96,7 +96,7 @@ fn start() -> Result<(), JsValue>
         let mut ctx = Context {
             window_width,
             window_height,
-            snake_pos: starting_pos
+            snake_head_pos: starting_pos
         };
 
         *g.borrow_mut() = Some(Closure::new(move || {
@@ -115,7 +115,8 @@ fn start() -> Result<(), JsValue>
     Ok(())
 }
 
-unsafe fn update(
+unsafe fn update
+(
     ctx: &mut Context,
     rendering_context: &WebGl2RenderingContext,
     program: &WebGlProgram,
@@ -129,7 +130,7 @@ unsafe fn update(
         handle_key_action(ctx, *active_key);
     }
 
-    let mut end_position = ctx.snake_pos.clone();
+    let mut end_position = ctx.snake_head_pos.clone();
 
     for animation in QUEUED_ANIMATIONS.iter() {
         if animation.done() { continue }
@@ -139,23 +140,22 @@ unsafe fn update(
         let dx = animation.end_position[0] - animation.start_position[0];
         let dy = animation.end_position[1] - animation.start_position[1];
 
-        let elapsed              = js_sys::Date::now() - animation.start_time;
-        let interpolation_factor = (elapsed / animation.duration) as f32;
+        let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
 
-        for i in (0..ctx.snake_pos.len()).step_by(2) {
+        for i in (0..ctx.snake_head_pos.len()).step_by(2) {
             end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
             end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
         }
     }
 
-    initial.append(&mut ctx.snake_pos.clone());
+    initial.append(&mut ctx.snake_head_pos.clone());
     resulting.append(&mut end_position.clone());
 
     let x = end_position[0];
     let y = end_position[1];
 
     if x >= ctx.window_width {
-        end_position = create_box(0., end_position[1], GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+        end_position = create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
     }
 
     if x + GRID_BOX_WIDTH > ctx.window_width {
@@ -212,7 +212,28 @@ unsafe fn update(
         .expect("Drawing failed");
     rendering_context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
 
-    ctx.snake_pos = end_position;
+    ctx.snake_head_pos = end_position;
+}
+
+fn pause_animation(animation: &mut Animation)
+{
+    if animation.is_paused { return }
+    if animation.pause_start_time == 0. {
+        animation.pause_start_time = now();
+    }
+    animation.is_paused = true;
+}
+
+fn unpause_animation(animation: &mut Animation)
+{
+    if !animation.is_paused { return }
+    animation.pause_end_time = now();
+    animation.is_paused = false;
+}
+
+fn now() -> f64
+{
+    js_sys::Date::now()
 }
 
 fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
@@ -240,18 +261,31 @@ const STEP: f32 = GRID_BOX_WIDTH;
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 static mut PAUSED: bool = false;
 
+#[derive(Debug)]
 struct Animation
 {
     start_time: f64,
     duration: f64,
     start_position: Vec<f32>,
-    end_position: Vec<f32>
+    end_position: Vec<f32>,
+
+    is_paused: bool,
+
+    pause_start_time: f64,
+    pause_end_time: f64
 }
 
-impl Animation {
+impl Animation
+{
     fn done(&self) -> bool
     {
-        (js_sys::Date::now() - self.start_time) >= self.duration
+        self.elapsed() >= self.duration
+    }
+
+    fn elapsed(&self) -> f64
+    {
+        let pause_duration = self.pause_end_time - self.pause_start_time;
+        now() - pause_duration - self.start_time
     }
 }
 
@@ -275,7 +309,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
 
     match key {
         87 /* w */  => {
-            let mut end_position = ctx.snake_pos.clone();
+            let mut end_position = ctx.snake_head_pos.clone();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
@@ -283,15 +317,18 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             QUEUED_ANIMATIONS.push
             (
                 Animation {
-                    start_time: js_sys::Date::now(),
+                    start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake_pos.clone(),
+                    start_position: ctx.snake_head_pos.clone(),
                     end_position,
+                    is_paused: false,
+                    pause_start_time: 0.,
+                    pause_end_time: 0.
                 }
             );
         },
         83 /* s */ => {
-            let mut end_position = ctx.snake_pos.clone();
+            let mut end_position = ctx.snake_head_pos.clone();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
@@ -299,15 +336,18 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             QUEUED_ANIMATIONS.push
             (
                 Animation {
-                    start_time: js_sys::Date::now(),
+                    start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake_pos.clone(),
+                    start_position: ctx.snake_head_pos.clone(),
                     end_position,
+                    is_paused: false,
+                    pause_start_time: 0.,
+                    pause_end_time: 0.
                 }
             );
         },
         65 /* a */ => {
-            let mut end_position = ctx.snake_pos.clone();
+            let mut end_position = ctx.snake_head_pos.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
@@ -315,15 +355,18 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             QUEUED_ANIMATIONS.push
             (
                 Animation {
-                    start_time: js_sys::Date::now(),
+                    start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake_pos.clone(),
-                    end_position
+                    start_position: ctx.snake_head_pos.clone(),
+                    end_position,
+                    is_paused: false,
+                    pause_start_time: 0.,
+                    pause_end_time: 0.
                 }
             );
         },
         68 /* d */ => {
-            let mut end_position = ctx.snake_pos.clone();
+            let mut end_position = ctx.snake_head_pos.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
@@ -331,14 +374,16 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             QUEUED_ANIMATIONS.push
             (
                 Animation {
-                    start_time: js_sys::Date::now(),
+                    start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake_pos.clone(),
-                    end_position
+                    start_position: ctx.snake_head_pos.clone(),
+                    end_position,
+                    is_paused: false,
+                    pause_start_time: 0.,
+                    pause_end_time: 0.
                 }
             );
         },
-        32 /* space */ => PAUSED = !PAUSED,
         _   => ()
     }
 }
@@ -379,11 +424,21 @@ pub unsafe fn key_up_event(event: web_sys::KeyboardEvent)
 pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
 {
     let code = event.key_code();
-    match code {
-        32 => { // space
-            PAUSED = !PAUSED
+    if code == 32 {
+        let previously_paused = PAUSED;
+        PAUSED = !PAUSED;
+        match previously_paused {
+            true => {
+                for animation in QUEUED_ANIMATIONS.iter_mut() {
+                    unpause_animation(animation);
+                }
+            }
+            false => {
+                for animation in QUEUED_ANIMATIONS.iter_mut() {
+                    pause_animation(animation);
+                }
+            }
         }
-        _   => ()
     }
 }
 
