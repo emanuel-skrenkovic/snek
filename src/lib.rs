@@ -1,6 +1,5 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::collections::VecDeque;
 
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
@@ -82,6 +81,9 @@ fn start() -> Result<(), JsValue>
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
 
+    let mut initial   = Vec::with_capacity(2000);
+    let mut resulting = Vec::with_capacity(2000);
+
     unsafe {
         let starting_pos = create_box
         (
@@ -96,8 +98,6 @@ fn start() -> Result<(), JsValue>
             snake_pos: starting_pos
         };
 
-        let mut renders: VecDeque<(Vec<f32>, Vec<f32>)> = VecDeque::with_capacity(200);
-
         *g.borrow_mut() = Some(Closure::new(move || {
             QUEUED_ANIMATIONS.retain(|a| !a.done());
 
@@ -107,7 +107,6 @@ fn start() -> Result<(), JsValue>
 
             let mut end_position = ctx.snake_pos.clone();
 
-            let vertices_count = ctx.snake_pos.len();
             for animation in QUEUED_ANIMATIONS.iter() {
                 if animation.done() { continue }
 
@@ -119,13 +118,14 @@ fn start() -> Result<(), JsValue>
                 let elapsed              = js_sys::Date::now() - animation.start_time;
                 let interpolation_factor = (elapsed / animation.duration) as f32;
 
-                for i in (0..vertices_count).step_by(2) {
+                for i in (0..ctx.snake_pos.len()).step_by(2) {
                     end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
                     end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
                 }
             }
 
-            renders.push_front((ctx.snake_pos.clone(), end_position.clone()));
+            initial.append(&mut ctx.snake_pos.clone());
+            resulting.append(&mut end_position.clone());
 
             let x = end_position[0];
             let y = end_position[1];
@@ -138,8 +138,9 @@ fn start() -> Result<(), JsValue>
                 let width = (x + GRID_BOX_WIDTH) - ctx.window_width;
                 let width = width.min(GRID_BOX_WIDTH);
 
-                let vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
-                renders.push_front((vertices.clone(), vertices));
+                let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
+                initial.append(&mut vertices.clone());
+                resulting.append(&mut vertices);
             }
 
             if x + GRID_BOX_WIDTH <= 0. {
@@ -148,8 +149,9 @@ fn start() -> Result<(), JsValue>
 
             if x <= 0. {
                 let hidden_width = 0. - x;
-                let vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
-                renders.push_front((vertices.clone(), vertices));
+                let mut vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
+                initial.append(&mut vertices.clone());
+                resulting.append(&mut vertices);
             }
 
             // Above
@@ -160,8 +162,9 @@ fn start() -> Result<(), JsValue>
 
             if y + GRID_BOX_HEIGHT >= ctx.window_height {
                 let height = y - ctx.window_height;
-                let vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                renders.push_front((vertices.clone(), vertices));
+                let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                initial.append(&mut vertices.clone());
+                resulting.append(&mut vertices);
             }
 
             // Below
@@ -172,17 +175,18 @@ fn start() -> Result<(), JsValue>
 
             if y <= 0. {
                 let height = y.abs();
-                let vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                renders.push_front((vertices.clone(), vertices));
+                let mut vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                initial.append(&mut vertices.clone());
+                resulting.append(&mut vertices);
             }
 
             context.clear_color(0.1, 0.2, 0.1, 1.0);
             context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
-            while let Some((initial, resulting)) = renders.pop_back() {
-                draw_vertices(&context, &program, &initial, &resulting).expect("Drawing failed");
-                context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, (initial.len() / 2) as i32);
-            }
+            let vertices_count = (initial.len() / 2) as i32;
+            draw_vertices(&context, &program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
+                .expect("Drawing failed");
+            context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
 
             ctx.snake_pos = end_position;
 
@@ -364,7 +368,8 @@ fn draw_vertices(
         let positions_array_buf = js_sys::Float32Array::new_with_length(vertices.len() as u32);
         positions_array_buf.copy_from(vertices);
 
-        context.buffer_data_with_array_buffer_view(
+        context.buffer_data_with_array_buffer_view
+        (
             WebGl2RenderingContext::ARRAY_BUFFER,
             &positions_array_buf,
             WebGl2RenderingContext::DYNAMIC_DRAW,
@@ -389,7 +394,8 @@ fn draw_vertices(
         let positions_array_buf = js_sys::Float32Array::new_with_length(translation.len() as u32);
         positions_array_buf.copy_from(translation);
 
-        context.buffer_data_with_array_buffer_view(
+        context.buffer_data_with_array_buffer_view
+        (
             WebGl2RenderingContext::ARRAY_BUFFER,
             &positions_array_buf,
             WebGl2RenderingContext::DYNAMIC_DRAW,
