@@ -14,7 +14,7 @@ struct Context
 {
     window_height: f32,
     window_width: f32,
-    snake_head_pos: Vec<f32>
+    snake: Vec<f32>
 }
 
 #[wasm_bindgen(start)]
@@ -96,8 +96,20 @@ fn start() -> Result<(), JsValue>
         let mut ctx = Context {
             window_width,
             window_height,
-            snake_head_pos: starting_pos
+            snake: starting_pos
         };
+
+        for i in 0..SNAKE_STARTING_LEN {
+            let mut part = create_box
+            (
+                ((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH - (i as f32 * GRID_BOX_WIDTH),
+                ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
+                GRID_BOX_WIDTH,
+                GRID_BOX_HEIGHT,
+            );
+
+            ctx.snake.append(&mut part);
+        }
 
         *g.borrow_mut() = Some(Closure::new(move || {
             if PAUSED {
@@ -105,7 +117,16 @@ fn start() -> Result<(), JsValue>
                 return
             }
 
-            update(&mut ctx, &context, &program, &mut initial, &mut resulting);
+            update_frame(&mut ctx, &mut initial, &mut resulting);
+
+            context.clear_color(0.1, 0.2, 0.1, 1.0);
+            context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+
+            let vertices_count = (initial.len() / 2) as i32;
+            draw_vertices(&context, &program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
+                .expect("Drawing failed");
+            context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
+
             request_animation_frame(f.borrow().as_ref().unwrap());
         }));
 
@@ -115,11 +136,9 @@ fn start() -> Result<(), JsValue>
     Ok(())
 }
 
-unsafe fn update
+unsafe fn update_frame
 (
     ctx: &mut Context,
-    rendering_context: &WebGl2RenderingContext,
-    program: &WebGlProgram,
     initial: &mut Vec<f32>,
     resulting: &mut Vec<f32>
 )
@@ -130,7 +149,7 @@ unsafe fn update
         handle_key_action(ctx, *active_key);
     }
 
-    let mut end_position = ctx.snake_head_pos.clone();
+    let mut end_position = ctx.snake.clone();
 
     for animation in QUEUED_ANIMATIONS.iter() {
         if animation.done() { continue }
@@ -142,13 +161,13 @@ unsafe fn update
 
         let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
 
-        for i in (0..ctx.snake_head_pos.len()).step_by(2) {
+        for i in (0..ctx.snake.len()).step_by(2) {
             end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
             end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
         }
     }
 
-    initial.append(&mut ctx.snake_head_pos.clone());
+    initial.append(&mut ctx.snake.clone());
     resulting.append(&mut end_position.clone());
 
     let x = end_position[0];
@@ -204,15 +223,9 @@ unsafe fn update
         resulting.append(&mut vertices);
     }
 
-    rendering_context.clear_color(0.1, 0.2, 0.1, 1.0);
-    rendering_context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
-    let vertices_count = (initial.len() / 2) as i32;
-    draw_vertices(rendering_context, program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
-        .expect("Drawing failed");
-    rendering_context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
 
-    ctx.snake_head_pos = end_position;
+    ctx.snake = end_position;
 }
 
 fn pause_animation(animation: &mut Animation)
@@ -257,6 +270,8 @@ const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
 
 const ANIMATION_DURATION: f64 = 200.;
 const STEP: f32 = GRID_BOX_WIDTH;
+
+const SNAKE_STARTING_LEN: usize = 3;
 
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 static mut PAUSED: bool = false;
@@ -309,17 +324,19 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
 
     match key {
         87 /* w */  => {
-            let mut end_position = ctx.snake_head_pos.clone();
+            let mut end_position = ctx.snake.clone();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
+
+
 
             QUEUED_ANIMATIONS.push
             (
                 Animation {
                     start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake_head_pos.clone(),
+                    start_position: ctx.snake.clone(),
                     end_position,
                     is_paused: false,
                     pause_start_time: 0.,
@@ -328,7 +345,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             );
         },
         83 /* s */ => {
-            let mut end_position = ctx.snake_head_pos.clone();
+            let mut end_position = ctx.snake.clone();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
@@ -338,7 +355,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                 Animation {
                     start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake_head_pos.clone(),
+                    start_position: ctx.snake.clone(),
                     end_position,
                     is_paused: false,
                     pause_start_time: 0.,
@@ -347,7 +364,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             );
         },
         65 /* a */ => {
-            let mut end_position = ctx.snake_head_pos.clone();
+            let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
@@ -357,7 +374,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                 Animation {
                     start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake_head_pos.clone(),
+                    start_position: ctx.snake.clone(),
                     end_position,
                     is_paused: false,
                     pause_start_time: 0.,
@@ -366,7 +383,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             );
         },
         68 /* d */ => {
-            let mut end_position = ctx.snake_head_pos.clone();
+            let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
@@ -376,7 +393,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                 Animation {
                     start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake_head_pos.clone(),
+                    start_position: ctx.snake.clone(),
                     end_position,
                     is_paused: false,
                     pause_start_time: 0.,
