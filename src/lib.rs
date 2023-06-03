@@ -102,7 +102,7 @@ fn start() -> Result<(), JsValue>
         for i in 0..SNAKE_STARTING_LEN {
             let mut part = create_box
             (
-                ((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH - (i as f32 * GRID_BOX_WIDTH),
+                (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) - (i as f32 * GRID_BOX_WIDTH),
                 ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
                 GRID_BOX_WIDTH,
                 GRID_BOX_HEIGHT,
@@ -154,17 +154,32 @@ unsafe fn update_frame
     for animation in QUEUED_ANIMATIONS.iter() {
         if animation.done() { continue }
 
-        // Calculate the difference once per animation
-        // as it is the same for every point.
-        let dx = animation.end_position[0] - animation.start_position[0];
-        let dy = animation.end_position[1] - animation.start_position[1];
-
         let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
 
-        for i in (0..ctx.snake.len()).step_by(2) {
-            end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
-            end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
+        for j in (0..ctx.snake.len()).step_by(12) {
+            for i in (0..12).step_by(2) {
+                let start_x = animation.start_position[i + j];
+                let start_y = animation.start_position[i + 1 + j];
+
+                let dx = animation.end_position[i + j] - start_x;
+                let dy = animation.end_position[i + 1 + j] - start_y;
+
+                end_position[i + j]     = ((start_x + dx * interpolation_factor) / 10.).round() * 10.;
+                end_position[i + 1 + j] = ((start_y + dy * interpolation_factor) / 10.).round() * 10.;
+            }
         }
+
+        // // Calculate the difference once per animation
+        // // as it is the same for every point.
+        // let dx = animation.end_position[0] - animation.start_position[0];
+        // let dy = animation.end_position[1] - animation.start_position[1];
+        //
+        // let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
+        //
+        // for i in (0..ctx.snake.len()).step_by(2) {
+        //     end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
+        //     end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
+        // }
     }
 
     initial.append(&mut ctx.snake.clone());
@@ -271,7 +286,7 @@ const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
 const ANIMATION_DURATION: f64 = 200.;
 const STEP: f32 = GRID_BOX_WIDTH;
 
-const SNAKE_STARTING_LEN: usize = 3;
+const SNAKE_STARTING_LEN: usize = 5;
 
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 static mut PAUSED: bool = false;
@@ -324,12 +339,11 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
 
     match key {
         87 /* w */  => {
-            let mut end_position = ctx.snake.clone();
+            let mut end_position = ctx.snake[0..12].to_vec();
+
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
-
-
 
             QUEUED_ANIMATIONS.push
             (
@@ -337,7 +351,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                     start_time: now(),
                     duration: ANIMATION_DURATION,
                     start_position: ctx.snake.clone(),
-                    end_position,
+                    end_position: move_snake(&ctx.snake, &end_position),
                     is_paused: false,
                     pause_start_time: 0.,
                     pause_end_time: 0.
@@ -356,7 +370,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                     start_time: now(),
                     duration: ANIMATION_DURATION,
                     start_position: ctx.snake.clone(),
-                    end_position,
+                    end_position: move_snake(&ctx.snake, &end_position),
                     is_paused: false,
                     pause_start_time: 0.,
                     pause_end_time: 0.
@@ -375,7 +389,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                     start_time: now(),
                     duration: ANIMATION_DURATION,
                     start_position: ctx.snake.clone(),
-                    end_position,
+                    end_position: move_snake(&ctx.snake, &end_position),
                     is_paused: false,
                     pause_start_time: 0.,
                     pause_end_time: 0.
@@ -394,7 +408,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                     start_time: now(),
                     duration: ANIMATION_DURATION,
                     start_position: ctx.snake.clone(),
-                    end_position,
+                    end_position: move_snake(&ctx.snake, &end_position),
                     is_paused: false,
                     pause_start_time: 0.,
                     pause_end_time: 0.
@@ -403,6 +417,22 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
         },
         _   => ()
     }
+}
+
+#[inline(always)]
+fn move_snake(snake: &[f32], head_movement: &[f32]) -> Vec<f32>
+{
+    let mut resulting_position = vec![0.; snake.len()];
+    let mut end_position       = head_movement.to_vec();
+
+    for part in (0..snake.len()).step_by(12) {
+        for i in 0..12 {
+            resulting_position[part + i] = end_position[i];
+        }
+        end_position = snake[part..part + 12].to_vec();
+    }
+
+    resulting_position
 }
 
 /// Registers the pressed key as an event if
