@@ -337,85 +337,51 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
 {
     if !QUEUED_ANIMATIONS.is_empty() { return }
 
-    match key {
+    let resulting_position: Option<Vec<f32>> = match key {
         87 /* w */  => {
             let mut end_position = ctx.snake[0..12].to_vec();
-
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
-
-            QUEUED_ANIMATIONS.push
-            (
-                Animation {
-                    start_time: now(),
-                    duration: ANIMATION_DURATION,
-                    start_position: ctx.snake.clone(),
-                    end_position: move_snake(&ctx.snake, &end_position),
-                    is_paused: false,
-                    pause_start_time: 0.,
-                    pause_end_time: 0.
-                }
-            );
+            Some(move_snake(&ctx.snake, &end_position))
         },
         83 /* s */ => {
             let mut end_position = ctx.snake.clone();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
-
-            QUEUED_ANIMATIONS.push
-            (
-                Animation {
-                    start_time: now(),
-                    duration: ANIMATION_DURATION,
-                    start_position: ctx.snake.clone(),
-                    end_position: move_snake(&ctx.snake, &end_position),
-                    is_paused: false,
-                    pause_start_time: 0.,
-                    pause_end_time: 0.
-                }
-            );
+            Some(move_snake(&ctx.snake, &end_position))
         },
         65 /* a */ => {
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
-
-            QUEUED_ANIMATIONS.push
-            (
-                Animation {
-                    start_time: now(),
-                    duration: ANIMATION_DURATION,
-                    start_position: ctx.snake.clone(),
-                    end_position: move_snake(&ctx.snake, &end_position),
-                    is_paused: false,
-                    pause_start_time: 0.,
-                    pause_end_time: 0.
-                }
-            );
+            Some(move_snake(&ctx.snake, &end_position))
         },
         68 /* d */ => {
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
-
-            QUEUED_ANIMATIONS.push
-            (
-                Animation {
-                    start_time: now(),
-                    duration: ANIMATION_DURATION,
-                    start_position: ctx.snake.clone(),
-                    end_position: move_snake(&ctx.snake, &end_position),
-                    is_paused: false,
-                    pause_start_time: 0.,
-                    pause_end_time: 0.
-                }
-            );
+            Some(move_snake(&ctx.snake, &end_position))
         },
-        _   => ()
+        _   => None
+    };
+
+    if let Some(resulting_position) = resulting_position {
+        QUEUED_ANIMATIONS.push
+        (
+            Animation {
+                start_time: now(),
+                duration: ANIMATION_DURATION,
+                start_position: ctx.snake.clone(),
+                end_position: resulting_position,
+                is_paused: false,
+                pause_start_time: 0.,
+                pause_end_time: 0.
+            }
+        );
     }
 }
 
