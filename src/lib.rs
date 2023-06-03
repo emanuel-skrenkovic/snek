@@ -1,6 +1,5 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::fmt;
 
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
@@ -15,10 +14,7 @@ struct Context
 {
     window_height: f32,
     window_width: f32,
-
-    // Holds all the snake boxes in a single
-    // contiguous piece of memory.
-    snake: Vec<f32>
+    snake_head_pos: Vec<f32>
 }
 
 #[wasm_bindgen(start)]
@@ -89,7 +85,7 @@ fn start() -> Result<(), JsValue>
     let mut resulting = Vec::with_capacity(2000);
 
     unsafe {
-        let mut starting_pos = create_box
+        let starting_pos = create_box
         (
             ((window_width / 2.) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH,
             ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
@@ -97,29 +93,10 @@ fn start() -> Result<(), JsValue>
             GRID_BOX_HEIGHT,
         );
 
-        let mut second = create_box
-        (
-            (((window_width / 2.) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH) - GRID_BOX_WIDTH,
-            ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
-            GRID_BOX_WIDTH,
-            GRID_BOX_HEIGHT,
-        );
-
-        let mut third = create_box
-            (
-                (((window_width / 2.) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH) - 2. * GRID_BOX_WIDTH,
-                ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
-                GRID_BOX_WIDTH,
-                GRID_BOX_HEIGHT,
-            );
-
-        starting_pos.append(&mut second);
-        starting_pos.append(&mut third);
-
         let mut ctx = Context {
             window_width,
             window_height,
-            snake: starting_pos
+            snake_head_pos: starting_pos
         };
 
         *g.borrow_mut() = Some(Closure::new(move || {
@@ -128,16 +105,7 @@ fn start() -> Result<(), JsValue>
                 return
             }
 
-            update(&mut ctx, &mut initial, &mut resulting);
-
-            context.clear_color(0.1, 0.2, 0.1, 1.0);
-            context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-
-            let vertices_count = (initial.len() / 2) as i32;
-            draw_vertices(&context, &program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
-                .expect("Drawing failed");
-            context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
-
+            update(&mut ctx, &context, &program, &mut initial, &mut resulting);
             request_animation_frame(f.borrow().as_ref().unwrap());
         }));
 
@@ -147,10 +115,11 @@ fn start() -> Result<(), JsValue>
     Ok(())
 }
 
-#[inline(always)]
 unsafe fn update
 (
     ctx: &mut Context,
+    rendering_context: &WebGl2RenderingContext,
+    program: &WebGlProgram,
     initial: &mut Vec<f32>,
     resulting: &mut Vec<f32>
 )
@@ -161,36 +130,25 @@ unsafe fn update
         handle_key_action(ctx, *active_key);
     }
 
-    let mut end_position = ctx.snake.clone();
+    let mut end_position = ctx.snake_head_pos.clone();
 
-    // Snake movement here.
     for animation in QUEUED_ANIMATIONS.iter() {
         if animation.done() { continue }
 
+        // Calculate the difference once per animation
+        // as it is the same for every point.
+        let dx = animation.end_position[0] - animation.start_position[0];
+        let dy = animation.end_position[1] - animation.start_position[1];
+
         let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
 
-        for j in (0..ctx.snake.len()).step_by(12) {
-            for i in (0..12).step_by(2) {
-                let dx = animation.end_position[i + j] - animation.start_position[i + j];
-                let dy = animation.end_position[i + 1 + j] - animation.start_position[i + 1 + j];
-
-                let start_x = animation.start_position[i];
-                let start_y = animation.start_position[i + 1];
-                let end_x = ((start_x + dx * interpolation_factor) / 10.).round() * 10.;
-                let end_y = ((start_y + dy * interpolation_factor) / 10.).round() * 10.;
-
-                end_position[i + j]     = end_x;
-                end_position[i + 1 + j] = end_y;
-
-                initial.push(start_x);
-                initial.push(start_y);
-                resulting.push(((animation.start_position[i + j] + dx * interpolation_factor) / 10.).round() * 10.);
-                resulting.push(((animation.start_position[i + 1 + j] + dy * interpolation_factor) / 10.).round() * 10.);
-            }
+        for i in (0..ctx.snake_head_pos.len()).step_by(2) {
+            end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
+            end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
         }
     }
 
-    initial.append(&mut ctx.snake.clone());
+    initial.append(&mut ctx.snake_head_pos.clone());
     resulting.append(&mut end_position.clone());
 
     let x = end_position[0];
@@ -246,18 +204,15 @@ unsafe fn update
         resulting.append(&mut vertices);
     }
 
-    ctx.snake = end_position;
-}
+    rendering_context.clear_color(0.1, 0.2, 0.1, 1.0);
+    rendering_context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
-fn log_slice(slice: &[f32]) -> String
-{
-    let mut output = String::new();
-    for i in (0..slice.len()).step_by(2) {
-        if i != 0 { output += ","; }
-        output += &format!("({}, {})", slice[i], slice[i + 1])
-    }
+    let vertices_count = (initial.len() / 2) as i32;
+    draw_vertices(rendering_context, program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
+        .expect("Drawing failed");
+    rendering_context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
 
-    output
+    ctx.snake_head_pos = end_position;
 }
 
 fn pause_animation(animation: &mut Animation)
@@ -354,8 +309,8 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
 
     match key {
         87 /* w */  => {
-            let mut end_position = ctx.snake.clone();
-            for i in (1..12).step_by(2) {
+            let mut end_position = ctx.snake_head_pos.clone();
+            for i in (1..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
 
@@ -364,7 +319,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                 Animation {
                     start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake.clone(),
+                    start_position: ctx.snake_head_pos.clone(),
                     end_position,
                     is_paused: false,
                     pause_start_time: 0.,
@@ -373,8 +328,8 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             );
         },
         83 /* s */ => {
-            let mut end_position = ctx.snake.clone();
-            for i in (1..12).step_by(2) {
+            let mut end_position = ctx.snake_head_pos.clone();
+            for i in (1..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
 
@@ -383,7 +338,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                 Animation {
                     start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake.clone(),
+                    start_position: ctx.snake_head_pos.clone(),
                     end_position,
                     is_paused: false,
                     pause_start_time: 0.,
@@ -392,8 +347,8 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             );
         },
         65 /* a */ => {
-            let mut end_position = ctx.snake.clone();
-            for i in (0..11).step_by(2) {
+            let mut end_position = ctx.snake_head_pos.clone();
+            for i in (0..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
 
@@ -402,7 +357,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                 Animation {
                     start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake.clone(),
+                    start_position: ctx.snake_head_pos.clone(),
                     end_position,
                     is_paused: false,
                     pause_start_time: 0.,
@@ -411,8 +366,8 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
             );
         },
         68 /* d */ => {
-            let mut end_position = ctx.snake.clone();
-            for i in (0..11).step_by(2) {
+            let mut end_position = ctx.snake_head_pos.clone();
+            for i in (0..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
 
@@ -421,7 +376,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
                 Animation {
                     start_time: now(),
                     duration: ANIMATION_DURATION,
-                    start_position: ctx.snake.clone(),
+                    start_position: ctx.snake_head_pos.clone(),
                     end_position,
                     is_paused: false,
                     pause_start_time: 0.,
@@ -603,50 +558,5 @@ pub fn link_program(
             context.get_program_info_log(&program)
                 .unwrap_or_else(|| String::from("Unknown error creating program object"))
         )
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::*;
-
-    #[test]
-    fn update_works()
-    {
-        let window_width = 1280.;
-        let window_height = 800.;
-
-        let mut starting_pos = create_box
-            (
-                ((window_width / 2.) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH,
-                ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
-                GRID_BOX_WIDTH,
-                GRID_BOX_HEIGHT,
-            );
-
-        let mut second = create_box
-            (
-                (((window_width / 2.) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH) - GRID_BOX_WIDTH,
-                ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
-                GRID_BOX_WIDTH,
-                GRID_BOX_HEIGHT,
-            );
-
-        starting_pos.append(&mut second);
-
-        let mut ctx = Context {
-            window_width,
-            window_height,
-            snake: starting_pos
-        };
-
-        let mut initial   = Vec::with_capacity(2000);
-        let mut resulting = Vec::with_capacity(2000);
-
-
-        unsafe {
-            KEYS.push(87);
-            update(&mut ctx, &mut initial, &mut resulting);
-        }
     }
 }
