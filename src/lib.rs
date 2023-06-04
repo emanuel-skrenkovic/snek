@@ -117,6 +117,12 @@ fn start() -> Result<(), JsValue>
                 return
             }
 
+            QUEUED_ANIMATIONS.retain(|a| !a.done());
+
+            for active_key in &KEYS {
+                handle_key_action(&mut ctx, *active_key);
+            }
+
             update_frame(&mut ctx, &mut initial, &mut resulting);
 
             context.clear_color(0.1, 0.2, 0.1, 1.0);
@@ -136,6 +142,7 @@ fn start() -> Result<(), JsValue>
     Ok(())
 }
 
+#[inline(always)]
 unsafe fn update_frame
 (
     ctx: &mut Context,
@@ -143,102 +150,92 @@ unsafe fn update_frame
     resulting: &mut Vec<f32>
 )
 {
-    QUEUED_ANIMATIONS.retain(|a| !a.done());
-
-    for active_key in &KEYS {
-        handle_key_action(ctx, *active_key);
-    }
-
     let mut end_position = ctx.snake.clone();
 
-    for animation in QUEUED_ANIMATIONS.iter() {
+    for animation in QUEUED_ANIMATIONS.iter_mut() {
         if animation.done() { continue }
 
         let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
 
-        for j in (0..ctx.snake.len()).step_by(12) {
-            for i in (0..12).step_by(2) {
-                let start_x = animation.start_position[i + j];
-                let start_y = animation.start_position[i + 1 + j];
+        for i in 0..animation.start_position.len() {
+            if i < 12 {
+                let delta = animation.end_position[i] - animation.start_position[i];
+                end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.).round() * 10.;
+            } else {
+                // Fills the background of the snake with snake body tiles.
+                // This is so "turns" are smoother - they are filled with a snake tile
+                // underneath so the corners aren't "smoothed".
+                // Head is excluded so the head movement animation remains smooth.
+                // Otherwise the "below" tile would just appear at the end position.
+                initial.push(animation.end_position[i]);
+                resulting.push(animation.end_position[i]);
 
-                let dx = animation.end_position[i + j] - start_x;
-                let dy = animation.end_position[i + 1 + j] - start_y;
-
-                end_position[i + j]     = ((start_x + dx * interpolation_factor) / 10.).round() * 10.;
-                end_position[i + 1 + j] = ((start_y + dy * interpolation_factor) / 10.).round() * 10.;
+                end_position[i] = animation.end_position[i];
             }
         }
-
-        // // Calculate the difference once per animation
-        // // as it is the same for every point.
-        // let dx = animation.end_position[0] - animation.start_position[0];
-        // let dy = animation.end_position[1] - animation.start_position[1];
-        //
-        // let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
-        //
-        // for i in (0..ctx.snake.len()).step_by(2) {
-        //     end_position[i]     = ((animation.start_position[i] + dx * interpolation_factor) / 10.).round() * 10.;
-        //     end_position[i + 1] = ((animation.start_position[i + 1] + dy * interpolation_factor) / 10.).round() * 10.;
-        // }
     }
 
     initial.append(&mut ctx.snake.clone());
     resulting.append(&mut end_position.clone());
 
-    let x = end_position[0];
-    let y = end_position[1];
+    for i in (0..end_position.len()).step_by(12) {
+        let x = end_position[i];
+        let y = end_position[i + 1];
 
-    if x >= ctx.window_width {
-        end_position = create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+        // Right
+        if x >= ctx.window_width {
+            end_position[i..i + 12]
+                .copy_from_slice(&create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+        }
+
+        if x + GRID_BOX_WIDTH > ctx.window_width {
+            let width = (x + GRID_BOX_WIDTH) - ctx.window_width;
+            let width = width.min(GRID_BOX_WIDTH);
+
+            let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
+            initial.append(&mut vertices.clone());
+            resulting.append(&mut vertices);
+        }
+
+        // Left
+        if x + GRID_BOX_WIDTH <= 0. {
+            end_position[i..i + 12]
+                .copy_from_slice(&create_box(ctx.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+        }
+
+        if x <= 0. {
+            let hidden_width = 0. - x;
+            let mut vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
+            initial.append(&mut vertices.clone());
+            resulting.append(&mut vertices);
+        }
+
+        // Up
+        if y >= ctx.window_height {
+            end_position[i..i + 12]
+                .copy_from_slice(&create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+        }
+
+        if y + GRID_BOX_HEIGHT >= ctx.window_height {
+            let height = y - ctx.window_height;
+            let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            initial.append(&mut vertices.clone());
+            resulting.append(&mut vertices);
+        }
+
+        // Down
+        if y + GRID_BOX_HEIGHT <= 0. {
+            end_position[i..i + 12]
+                .copy_from_slice(&create_box(x, ctx.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+        }
+
+        if y <= 0. {
+            let height = y.abs();
+            let mut vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            initial.append(&mut vertices.clone());
+            resulting.append(&mut vertices);
+        }
     }
-
-    if x + GRID_BOX_WIDTH > ctx.window_width {
-        let width = (x + GRID_BOX_WIDTH) - ctx.window_width;
-        let width = width.min(GRID_BOX_WIDTH);
-
-        let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
-        initial.append(&mut vertices.clone());
-        resulting.append(&mut vertices);
-    }
-
-    if x + GRID_BOX_WIDTH <= 0. {
-        end_position = create_box(ctx.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-    }
-
-    if x <= 0. {
-        let hidden_width = 0. - x;
-        let mut vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
-        initial.append(&mut vertices.clone());
-        resulting.append(&mut vertices);
-    }
-
-    // Above
-
-    if y >= ctx.window_height {
-        end_position = create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-    }
-
-    if y + GRID_BOX_HEIGHT >= ctx.window_height {
-        let height = y - ctx.window_height;
-        let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-        initial.append(&mut vertices.clone());
-        resulting.append(&mut vertices);
-    }
-
-    // Below
-
-    if y + GRID_BOX_HEIGHT <= 0. {
-        end_position = create_box(x, ctx.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-    }
-
-    if y <= 0. {
-        let height = y.abs();
-        let mut vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-        initial.append(&mut vertices.clone());
-        resulting.append(&mut vertices);
-    }
-
-
 
     ctx.snake = end_position;
 }
@@ -286,7 +283,7 @@ const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
 const ANIMATION_DURATION: f64 = 200.;
 const STEP: f32 = GRID_BOX_WIDTH;
 
-const SNAKE_STARTING_LEN: usize = 5;
+const SNAKE_STARTING_LEN: usize = 8;
 
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 static mut PAUSED: bool = false;
@@ -392,9 +389,7 @@ fn move_snake(snake: &[f32], head_movement: &[f32]) -> Vec<f32>
     let mut end_position       = head_movement.to_vec();
 
     for part in (0..snake.len()).step_by(12) {
-        for i in 0..12 {
-            resulting_position[part + i] = end_position[i];
-        }
+        resulting_position[part..part + 12].copy_from_slice(&end_position[..12]);
         end_position = snake[part..part + 12].to_vec();
     }
 
