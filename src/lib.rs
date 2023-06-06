@@ -4,6 +4,27 @@ use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
 
+const GRID_WIDTH: usize  = 16;
+const GRID_HEIGHT: usize = 10;
+
+const GRID_BOX_WIDTH: f32 = 1280. / GRID_WIDTH as f32;
+const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
+
+const ANIMATION_DURATION: f64 = 200.;
+const STEP: f32 = GRID_BOX_WIDTH;
+
+const SNAKE_STARTING_LEN: usize = 12;
+
+static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
+static mut PAUSED: bool = true;
+
+static mut CTX: Context = Context{
+    window_height: 0.0,
+    window_width: 0.0,
+    snake: vec![],
+    direction: 0,
+};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -14,7 +35,8 @@ struct Context
 {
     window_height: f32,
     window_width: f32,
-    snake: Vec<f32>
+    snake: Vec<f32>,
+    direction: u32
 }
 
 #[wasm_bindgen(start)]
@@ -85,31 +107,30 @@ fn start() -> Result<(), JsValue>
     let mut resulting = Vec::with_capacity(2000);
 
     unsafe {
-        let starting_pos = create_box
-        (
-            ((window_width / 2.) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH,
-            ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
-            GRID_BOX_WIDTH,
-            GRID_BOX_HEIGHT,
-        );
+        // Start off by going left.
+        KEYS.push(97);
 
         let mut ctx = Context {
             window_width,
             window_height,
-            snake: starting_pos
+            snake: vec![],
+            direction: 97
         };
+
+        CTX = ctx;
 
         for i in 0..SNAKE_STARTING_LEN {
             let mut part = create_box
             (
-                (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) - (i as f32 * GRID_BOX_WIDTH),
+                (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) + (i as f32 * GRID_BOX_WIDTH),
                 ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
                 GRID_BOX_WIDTH,
                 GRID_BOX_HEIGHT,
             );
 
-            ctx.snake.append(&mut part);
+            CTX.snake.append(&mut part);
         }
+
 
         *g.borrow_mut() = Some(Closure::new(move || {
             if PAUSED {
@@ -120,10 +141,15 @@ fn start() -> Result<(), JsValue>
             QUEUED_ANIMATIONS.retain(|a| !a.done());
 
             for active_key in &KEYS {
-                handle_key_action(&mut ctx, *active_key);
+                handle_key_action(&mut CTX, *active_key);
             }
 
-            update_frame(&mut ctx, &mut initial, &mut resulting);
+            update_frame(&mut CTX, &mut initial, &mut resulting);
+
+            if collisions(&CTX) {
+                log("YA DUN");
+                return
+            }
 
             context.clear_color(0.1, 0.2, 0.1, 1.0);
             context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
@@ -157,21 +183,21 @@ unsafe fn update_frame
 
         let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
 
-        for i in 0..animation.start_position.len() {
-            if i < 12 {
-                let delta = animation.end_position[i] - animation.start_position[i];
-                end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.).round() * 10.;
-            } else {
-                // Fills the background of the snake with snake body tiles.
-                // This is so "turns" are smoother - they are filled with a snake tile
-                // underneath so the corners aren't "smoothed".
-                // Head is excluded so the head movement animation remains smooth.
-                // Otherwise the "below" tile would just appear at the end position.
-                initial.push(animation.end_position[i]);
-                resulting.push(animation.end_position[i]);
+        for i in 0..12 {
+            let delta = animation.end_position[i] - animation.start_position[i];
+            end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.).round() * 10.;
+        }
 
-                end_position[i] = animation.end_position[i];
-            }
+        for i in 12..animation.start_position.len() {
+            // Fills the background of the snake with snake body tiles.
+            // This is so "turns" are smoother - they are filled with a snake tile
+            // underneath so the corners aren't "smoothed".
+            // Head is excluded so the head movement animation remains smooth.
+            // Otherwise the "below" tile would just appear at the end position.
+            initial.push(animation.end_position[i]);
+            resulting.push(animation.end_position[i]);
+
+            end_position[i] = animation.end_position[i];
         }
     }
 
@@ -240,6 +266,51 @@ unsafe fn update_frame
     ctx.snake = end_position;
 }
 
+// AABB vs AABB
+// https://developer.mozilla.org/en-US/docs/Games/Techniques/3D_collision_detection#aabb_vs._aabb
+#[inline(always)]
+fn box_collision(one: &[f32], two: &[f32]) -> bool
+{
+    // a.minX <= b.maxX &&
+    // a.maxX >= b.minX &&
+    // a.minY <= b.maxY &&
+    // a.maxY >= b.minY &&
+
+    let collision_x = one[0] < two[0] + GRID_BOX_WIDTH - 15. && one[0] + GRID_BOX_WIDTH - 15. > two[0];
+    let collision_y = one[1] < two[1] + GRID_BOX_HEIGHT - 15. && one[1] + GRID_BOX_HEIGHT - 15. > two[1];
+    collision_x && collision_y
+}
+
+#[inline(always)]
+unsafe fn collisions(ctx: &Context) -> bool
+{
+    let head = &ctx.snake[0..12];
+    for i in (24..ctx.snake.len()).step_by(12) {
+        if box_collision(head, &ctx.snake[i..i + 12]) { return true }
+    }
+
+    false
+}
+
+fn format_coordinates(coordinates: &[f32]) -> String {
+    let mut formatted_string = String::new();
+
+    for i in 0..coordinates.len() / 2 {
+        let x = coordinates[i * 2];
+        let y = coordinates[i * 2 + 1];
+
+        let pair = format!("({:.1}, {:.1})", x, y);
+
+        if i > 0 {
+            formatted_string.push_str(", ");
+        }
+
+        formatted_string.push_str(&pair);
+    }
+
+    formatted_string
+}
+
 fn pause_animation(animation: &mut Animation)
 {
     if animation.is_paused { return }
@@ -274,19 +345,7 @@ fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
     ]
 }
 
-const GRID_WIDTH: usize  = 16;
-const GRID_HEIGHT: usize = 10;
 
-const GRID_BOX_WIDTH: f32 = 1280. / GRID_WIDTH as f32;
-const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
-
-const ANIMATION_DURATION: f64 = 200.;
-const STEP: f32 = GRID_BOX_WIDTH;
-
-const SNAKE_STARTING_LEN: usize = 8;
-
-static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
-static mut PAUSED: bool = false;
 
 #[derive(Debug)]
 struct Animation
@@ -333,30 +392,33 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>)
 unsafe fn handle_key_action(ctx: &mut Context, key: u32)
 {
     if !QUEUED_ANIMATIONS.is_empty() { return }
-
     let resulting_position: Option<Vec<f32>> = match key {
-        87 /* w */  => {
+        87 | 119 /* w */  => {
+            if ctx.direction == 83 || ctx.direction == 115 { return }
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        83 /* s */ => {
+        83 | 115 /* s */ => {
+            if ctx.direction == 87 || ctx.direction == 119 { return }
             let mut end_position = ctx.snake.clone();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        65 /* a */ => {
+        65 | 97 /* a */ => {
+            if ctx.direction == 68 || ctx.direction == 100 { return }
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        68 /* d */ => {
+        68 | 100 /* d */ => {
+            if ctx.direction == 65 || ctx.direction == 97 { return }
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
@@ -367,6 +429,7 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
     };
 
     if let Some(resulting_position) = resulting_position {
+        CTX.direction = key;
         QUEUED_ANIMATIONS.push
         (
             Animation {
@@ -396,57 +459,66 @@ fn move_snake(snake: &[f32], head_movement: &[f32]) -> Vec<f32>
     resulting_position
 }
 
-/// Registers the pressed key as an event if
-/// it is a part of the logic.
-/// Stores the pressed key code in global state
-/// if it is not already present.
-#[wasm_bindgen]
-pub unsafe fn key_down_event(event: web_sys::KeyboardEvent)
-{
-    let code = event.key_code();
-    match code {
-        87 | 83 | 65 | 68 => { // wasd
-            if !KEYS.contains(&code) {
-                KEYS.push(event.key_code())
-            }
-        },
-        _   => ()
-    }
-}
-
-/// Stores the event into the global state that holds all
-/// queued events.
-#[wasm_bindgen]
-pub unsafe fn key_up_event(event: web_sys::KeyboardEvent)
-{
-    let code = event.key_code();
-    match code {
-        87 | 83 | 65 | 68 => KEYS.retain(|c| c != &code),
-        _ => ()
-    }
-}
-
 /// Stores the event into the global state that holds all
 /// queued events. This is used for the 'keypress' dom event.
 #[wasm_bindgen]
 pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
 {
     let code = event.key_code();
-    if code == 32 {
-        let previously_paused = PAUSED;
-        PAUSED = !PAUSED;
-        match previously_paused {
-            true => {
-                for animation in QUEUED_ANIMATIONS.iter_mut() {
-                    unpause_animation(animation);
-                }
+    match code {
+        // w
+        119 | 87 => {
+            if CTX.direction == 115 { return }
+            if !KEYS.contains(&code) && !KEYS.contains(&115) {
+                KEYS.clear();
+                KEYS.push(event.key_code())
             }
-            false => {
-                for animation in QUEUED_ANIMATIONS.iter_mut() {
-                    pause_animation(animation);
+        }
+
+        // s
+        115 | 83 => {
+            if CTX.direction == 119 { return }
+            if !KEYS.contains(&code) && !KEYS.contains(&119) {
+                KEYS.clear();
+                KEYS.push(event.key_code())
+            }
+        }
+
+        // d
+        100 | 68 => {
+            if CTX.direction == 97 { return }
+            if !KEYS.contains(&code) && !KEYS.contains(&97) {
+                KEYS.clear();
+                KEYS.push(event.key_code())
+            }
+        }
+
+        // a
+        97 | 65 => {
+            if CTX.direction == 100 { return }
+            if !KEYS.contains(&code) && !KEYS.contains(&100) {
+                KEYS.clear();
+                KEYS.push(event.key_code())
+            }
+        }
+
+        32 => {
+            let previously_paused = PAUSED;
+            PAUSED = !PAUSED;
+            match previously_paused {
+                true => {
+                    for animation in QUEUED_ANIMATIONS.iter_mut() {
+                        unpause_animation(animation);
+                    }
+                }
+                false => {
+                    for animation in QUEUED_ANIMATIONS.iter_mut() {
+                        pause_animation(animation);
+                    }
                 }
             }
         }
+        _ => ()
     }
 }
 
