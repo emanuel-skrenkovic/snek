@@ -13,10 +13,11 @@ const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
 const ANIMATION_DURATION: f64 = 200.;
 const STEP: f32 = GRID_BOX_WIDTH;
 
-const SNAKE_STARTING_LEN: usize = 12;
+const SNAKE_STARTING_LEN: usize = 4;
 
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 static mut PAUSED: bool = true;
+static mut GAME_OVER: bool = false;
 
 static mut CTX: Context = Context{
     window_height: 0.0,
@@ -29,6 +30,9 @@ static mut CTX: Context = Context{
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
+
+    #[wasm_bindgen(js_namespace = window)]
+    fn game_over(score: usize);
 }
 
 struct Context
@@ -107,30 +111,7 @@ fn start() -> Result<(), JsValue>
     let mut resulting = Vec::with_capacity(2000);
 
     unsafe {
-        // Start off by going left.
-        KEYS.push(97);
-
-        let mut ctx = Context {
-            window_width,
-            window_height,
-            snake: vec![],
-            direction: 97
-        };
-
-        CTX = ctx;
-
-        for i in 0..SNAKE_STARTING_LEN {
-            let mut part = create_box
-            (
-                (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) + (i as f32 * GRID_BOX_WIDTH),
-                ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
-                GRID_BOX_WIDTH,
-                GRID_BOX_HEIGHT,
-            );
-
-            CTX.snake.append(&mut part);
-        }
-
+        setup_game_state(window_width, window_height);
 
         *g.borrow_mut() = Some(Closure::new(move || {
             if PAUSED {
@@ -147,8 +128,9 @@ fn start() -> Result<(), JsValue>
             update_frame(&mut CTX, &mut initial, &mut resulting);
 
             if collisions(&CTX) {
-                log("YA DUN");
-                return
+                GAME_OVER = true;
+                game_over(CTX.snake.len() / 12);
+                setup_game_state(window_width, window_height);
             }
 
             context.clear_color(0.1, 0.2, 0.1, 1.0);
@@ -264,6 +246,39 @@ unsafe fn update_frame
     }
 
     ctx.snake = end_position;
+}
+
+unsafe fn setup_game_state(window_width: f32, window_height: f32)
+{
+    PAUSED = true;
+    GAME_OVER = false;
+
+    QUEUED_ANIMATIONS.clear();
+
+    // Start off by going left.
+    KEYS.clear();
+    KEYS.push(97);
+
+    let mut ctx = Context {
+        window_width,
+        window_height,
+        snake: vec![],
+        direction: 97
+    };
+
+    CTX = ctx;
+
+    for i in 0..SNAKE_STARTING_LEN {
+        let mut part = create_box
+            (
+                (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) + (i as f32 * GRID_BOX_WIDTH),
+                ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
+                GRID_BOX_WIDTH,
+                GRID_BOX_HEIGHT,
+            );
+
+        CTX.snake.append(&mut part);
+    }
 }
 
 // AABB vs AABB

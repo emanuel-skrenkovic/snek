@@ -2,6 +2,10 @@
 // example.
 const rust = import('./pkg')
 
+window.game_over = (score) => {
+    console.log('score', score)
+}
+
 rust.then(m => {
     m.start()
 
