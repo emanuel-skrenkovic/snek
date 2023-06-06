@@ -14,8 +14,18 @@
             left: 0;
             right: 0;
         }
+
+        #overlay {
+            position: absolute;
+            transform: translate(50%);
+            margin: 5em auto auto;
+            z-index: 1;
+            font-size: 32px;
+            color: aliceblue;
+        }
     </style>
     <body>
+        <div id="overlay"></div>
         <canvas id="canvas" width="1280" height="800"></canvas>
     </body>
 </html>

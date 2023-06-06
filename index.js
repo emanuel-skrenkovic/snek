@@ -2,8 +2,18 @@
 // example.
 const rust = import('./pkg')
 
+const overlay = () => document.querySelector('#overlay')
+
 window.game_over = (score) => {
-    console.log('score', score)
+    overlay().innerText = `You scored: ${score}`;
+}
+
+window.pause = () => {
+    overlay().innerText = 'PAUSED'
+}
+
+window.clear_screen = () => {
+    overlay().innerText = ''
 }
 
 rust.then(m => {

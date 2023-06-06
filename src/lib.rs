@@ -13,7 +13,7 @@ const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
 const ANIMATION_DURATION: f64 = 200.;
 const STEP: f32 = GRID_BOX_WIDTH;
 
-const SNAKE_STARTING_LEN: usize = 4;
+const SNAKE_STARTING_LEN: usize = 5;
 
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 static mut PAUSED: bool = true;
@@ -33,6 +33,12 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = window)]
     fn game_over(score: usize);
+
+    #[wasm_bindgen(js_namespace = window)]
+    fn clear_screen();
+
+    #[wasm_bindgen(js_namespace = window)]
+    fn pause();
 }
 
 struct Context
@@ -111,7 +117,7 @@ fn start() -> Result<(), JsValue>
     let mut resulting = Vec::with_capacity(2000);
 
     unsafe {
-        setup_game_state(window_width, window_height);
+        initiate_game(window_width, window_height);
 
         *g.borrow_mut() = Some(Closure::new(move || {
             if PAUSED {
@@ -130,7 +136,7 @@ fn start() -> Result<(), JsValue>
             if collisions(&CTX) {
                 GAME_OVER = true;
                 game_over(CTX.snake.len() / 12);
-                setup_game_state(window_width, window_height);
+                initiate_game(window_width, window_height);
             }
 
             context.clear_color(0.1, 0.2, 0.1, 1.0);
@@ -248,7 +254,7 @@ unsafe fn update_frame
     ctx.snake = end_position;
 }
 
-unsafe fn setup_game_state(window_width: f32, window_height: f32)
+unsafe fn initiate_game(window_width: f32, window_height: f32)
 {
     PAUSED = true;
     GAME_OVER = false;
@@ -522,11 +528,13 @@ pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
             PAUSED = !PAUSED;
             match previously_paused {
                 true => {
+                    clear_screen();
                     for animation in QUEUED_ANIMATIONS.iter_mut() {
                         unpause_animation(animation);
                     }
                 }
                 false => {
+                    pause();
                     for animation in QUEUED_ANIMATIONS.iter_mut() {
                         pause_animation(animation);
                     }
