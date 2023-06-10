@@ -1,24 +1,54 @@
-// For more comments about what's going on here, check out the `hello_world`
-// example.
 const rust = import('./pkg')
 
-const overlay = () => document.querySelector('#overlay')
+const save_score = (body) => fetch('/scores', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {'Content-Type': 'application/json'}
+})
 
-window.game_over = (score) => {
-    overlay().innerText = `You scored: ${score}`;
+const get_scores = async () => {
+    const response = await fetch('/scores', { method: 'GET' })
+    return await response.json()
 }
 
-window.pause = () => {
-    overlay().innerText = 'PAUSED'
+window.game_over = async (score) => {
+    await save_score({ name: 'test', score: score })
+    const scores = await get_scores()
+
+    const high_scores_list = scores.map(({ name, score }) => `
+    <tr>
+        <td>${name}</td>
+        <td>${score}</td>
+    </tr>`).reduce((agg, current) => `${agg}${current}`)
+
+    const table_body = `
+    <table class="high-score-list">
+        <thead>
+        <tr>
+            <th></th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+            ${high_scores_list}
+        </tbody>
+    </table>`
+
+    overlay().innerHTML = `
+    You scored: ${score}
+    <br>
+    High scores:
+    <br>
+    ${table_body}`;
 }
 
-window.clear_screen = () => {
-    overlay().innerText = ''
-}
+window.pause = () => overlay().innerText = 'PAUSED'
+window.clear_screen = () => overlay().innerText = ''
 
 rust.then(m => {
-    m.start()
-
     window.addEventListener('keypress', m.key_press_event)
+    m.start()
 }).catch(console.error);
+
+const overlay = () => document.querySelector('#overlay')
 

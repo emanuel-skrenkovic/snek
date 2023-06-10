@@ -19,7 +19,7 @@ static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 static mut PAUSED: bool = true;
 static mut GAME_OVER: bool = false;
 
-static mut CTX: Context = Context{
+static mut CTX: Context = Context {
     window_height: 0.0,
     window_width: 0.0,
     snake: vec![],
@@ -117,6 +117,13 @@ fn start() -> Result<(), JsValue>
     let mut resulting = Vec::with_capacity(2000);
 
     unsafe {
+        CTX = Context {
+            window_width,
+            window_height,
+            snake: vec![],
+            direction: 97
+        };
+
         initiate_game(window_width, window_height);
 
         *g.borrow_mut() = Some(Closure::new(move || {
@@ -179,7 +186,7 @@ unsafe fn update_frame
         for i in 12..animation.start_position.len() {
             // Fills the background of the snake with snake body tiles.
             // This is so "turns" are smoother - they are filled with a snake tile
-            // underneath so the corners aren't "smoothed".
+            // underneath so the corners aren't "smoothed" while turning.
             // Head is excluded so the head movement animation remains smooth.
             // Otherwise the "below" tile would just appear at the end position.
             initial.push(animation.end_position[i]);
@@ -261,18 +268,16 @@ unsafe fn initiate_game(window_width: f32, window_height: f32)
 
     QUEUED_ANIMATIONS.clear();
 
+
+
+
+
+    CTX.snake = vec![];
+
     // Start off by going left.
     KEYS.clear();
     KEYS.push(97);
-
-    let mut ctx = Context {
-        window_width,
-        window_height,
-        snake: vec![],
-        direction: 97
-    };
-
-    CTX = ctx;
+    CTX.direction = 97;
 
     for i in 0..SNAKE_STARTING_LEN {
         let mut part = create_box
