@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::cell::RefCell;
+use js_sys::Math::random;
 
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
@@ -23,6 +24,7 @@ static mut CTX: Context = Context {
     window_height: 0.0,
     window_width: 0.0,
     snake: vec![],
+    apple: None,
     direction: 0,
 };
 
@@ -46,6 +48,7 @@ struct Context
     window_height: f32,
     window_width: f32,
     snake: Vec<f32>,
+    apple: Option<(u32, u32)>,
     direction: u32
 }
 
@@ -121,6 +124,7 @@ fn start() -> Result<(), JsValue>
             window_width,
             window_height,
             snake: vec![],
+            apple: None,
             direction: 97
         };
 
@@ -139,6 +143,7 @@ fn start() -> Result<(), JsValue>
             }
 
             update_frame(&mut CTX, &mut initial, &mut resulting);
+            spawn_apple(&mut CTX);
 
             if collisions(&CTX) {
                 GAME_OVER = true;
@@ -149,10 +154,22 @@ fn start() -> Result<(), JsValue>
             context.clear_color(0.1, 0.2, 0.1, 1.0);
             context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
-            let vertices_count = (initial.len() / 2) as i32;
-            draw_vertices(&context, &program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
-                .expect("Drawing failed");
-            context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
+            // TODO: have only one draw call per frame!!!
+
+            {
+                let apple          = CTX.apple.unwrap();
+                let apple_vertices = create_box(apple.0 as f32, apple.1 as f32, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                draw_vertices(&context, &program, &apple_vertices, &apple_vertices)
+                    .expect("Drawing apple failed");
+                context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, apple_vertices.len() as i32 / 2);
+            }
+
+            {
+                let vertices_count = (initial.len() / 2) as i32;
+                draw_vertices(&context, &program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
+                    .expect("Drawing failed");
+                context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
+            }
 
             request_animation_frame(f.borrow().as_ref().unwrap());
         }));
@@ -161,6 +178,35 @@ fn start() -> Result<(), JsValue>
     }
 
     Ok(())
+}
+
+#[inline(always)]
+unsafe fn spawn_apple(ctx: &mut Context)
+{
+    if ctx.apple.is_some() { return }
+
+    let vertical_blocks   = GRID_WIDTH / GRID_BOX_WIDTH as usize;
+    let horizontal_blocks = GRID_HEIGHT / GRID_BOX_HEIGHT as usize;
+
+    let mut unoccupied: Vec<(f32, f32)> = Vec::with_capacity(vertical_blocks * horizontal_blocks);
+
+    for i in (0..GRID_WIDTH * GRID_BOX_WIDTH as usize).step_by(GRID_BOX_WIDTH as usize) {
+        for j in (0..GRID_HEIGHT * GRID_BOX_HEIGHT as usize).step_by(GRID_BOX_HEIGHT as usize) {
+            let mut contains = false;
+
+            for k in (0..ctx.snake.len()).step_by(2) {
+                if ctx.snake[k] == i as f32 && ctx.snake[k + 1] == j as f32 { continue }
+                contains = true;
+                break;
+            }
+
+            if contains { unoccupied.push((i as f32, j as f32)); }
+        }
+    }
+
+    let seed     = random() * 2000.;
+    let position = seed as usize % unoccupied.len();
+    ctx.apple    = Some((unoccupied[position].0 as u32, unoccupied[position].1 as u32));
 }
 
 #[inline(always)]
@@ -268,10 +314,6 @@ unsafe fn initiate_game(window_width: f32, window_height: f32)
 
     QUEUED_ANIMATIONS.clear();
 
-
-
-
-
     CTX.snake = vec![];
 
     // Start off by going left.
@@ -281,12 +323,12 @@ unsafe fn initiate_game(window_width: f32, window_height: f32)
 
     for i in 0..SNAKE_STARTING_LEN {
         let mut part = create_box
-            (
-                (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) + (i as f32 * GRID_BOX_WIDTH),
-                ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
-                GRID_BOX_WIDTH,
-                GRID_BOX_HEIGHT,
-            );
+        (
+            (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) + (i as f32 * GRID_BOX_WIDTH),
+            ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
+            GRID_BOX_WIDTH,
+            GRID_BOX_HEIGHT,
+        );
 
         CTX.snake.append(&mut part);
     }
@@ -550,7 +592,8 @@ pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
     }
 }
 
-fn draw_vertices(
+fn draw_vertices
+(
     context: &WebGl2RenderingContext,
     program: &WebGlProgram,
     vertices: &[f32],
