@@ -45,8 +45,13 @@ window.game_over = async (score) => {
 window.pause = () => overlay().innerText = 'PAUSED'
 window.clear_screen = () => overlay().innerText = ''
 
+window.scored = (score) => {
+    overlay().innerHTML = `Score: ${score}`
+}
+
 rust.then(m => {
     window.addEventListener('keypress', m.key_press_event)
+    overlay().innerHTML = `Score: 0`
     m.start()
 }).catch(console.error);
 

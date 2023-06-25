@@ -14,7 +14,7 @@ const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
 const ANIMATION_DURATION: f64 = 200.;
 const STEP: f32 = GRID_BOX_WIDTH;
 
-const SNAKE_STARTING_LEN: usize = 5;
+const SNAKE_STARTING_LEN: usize = 4;
 
 const SNAKE_COLOUR: [f32; 3] = [0.1, 0.65, 0.1];
 const APPLE_COLOUR: [f32; 3] = [0.65, 0.1, 0.1];
@@ -38,6 +38,9 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = window)]
     fn game_over(score: usize);
+
+    #[wasm_bindgen(js_namespace = window)]
+    fn scored(score: usize);
 
     #[wasm_bindgen(js_namespace = window)]
     fn clear_screen();
@@ -155,18 +158,28 @@ fn start() -> Result<(), JsValue>
 
             if collisions(&CTX) {
                 GAME_OVER = true;
-                game_over(CTX.snake.len() / 12);
+                game_over(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
                 initiate_game(window_width, window_height);
             }
 
-            context.clear_color(0.1, 0.2, 0.1, 1.0);
-            context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+            if did_the_snek_eat_the_apple(&CTX) {
+                let snake_len = CTX.snake.len();
+                let mut new_tail = create_box
+                (
+                    CTX.snake[snake_len - 12], // x coord of the last block
+                    CTX.snake[snake_len - 11], // y coord of the last block
+                    GRID_BOX_WIDTH,
+                    GRID_BOX_HEIGHT
+                );
+
+                CTX.snake.append(&mut new_tail);
+                CTX.apple = None;
+                scored(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
+            }
 
             colours.append(&mut SNAKE_COLOUR.repeat(resulting_position.len() / 2));
 
-            // Apple
-            {
-                let apple              = CTX.apple.unwrap();
+            if let Some(apple) = CTX.apple {
                 let mut apple_vertices = create_box(apple.0, apple.1, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
 
                 colours.append(&mut APPLE_COLOUR.repeat(apple_vertices.len() / 2));
@@ -175,6 +188,9 @@ fn start() -> Result<(), JsValue>
 
             let vertices_count = resulting_position.len() / 2;
             let vertices_count= vertices_count as i32;
+
+            context.clear_color(0.1, 0.2, 0.1, 1.0);
+            context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
             draw_vertices
             (
@@ -354,7 +370,7 @@ fn box_collision(one: &[f32], two: &[f32]) -> bool
 }
 
 #[inline(always)]
-unsafe fn collisions(ctx: &Context) -> bool
+fn collisions(ctx: &Context) -> bool
 {
     let head = &ctx.snake[0..12];
     for i in (24..ctx.snake.len()).step_by(12) {
@@ -362,6 +378,15 @@ unsafe fn collisions(ctx: &Context) -> bool
     }
 
     false
+}
+
+// Head <-> apple collision
+#[inline(always)]
+fn did_the_snek_eat_the_apple(ctx: &Context) -> bool
+{
+    let Some(apple) = ctx.apple else { return false };
+    let apple_box = create_box(apple.0, apple.1, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+    box_collision(&ctx.snake[0..12], &apple_box)
 }
 
 #[allow(dead_code)]
