@@ -150,10 +150,10 @@ fn start() -> Result<(), JsValue>
             QUEUED_ANIMATIONS.retain(|a| !a.done());
 
             for active_key in &KEYS {
-                handle_key_action(&mut CTX, *active_key);
+                handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
             }
 
-            update_frame(&mut CTX, &mut resulting_position);
+            snake_movement(&mut CTX, &QUEUED_ANIMATIONS, &mut resulting_position);
             spawn_apple(&mut CTX);
 
             if collisions(&CTX) {
@@ -212,7 +212,7 @@ fn start() -> Result<(), JsValue>
 }
 
 #[inline(always)]
-unsafe fn spawn_apple(ctx: &mut Context)
+fn spawn_apple(ctx: &mut Context)
 {
     if ctx.apple.is_some() { return }
 
@@ -242,15 +242,16 @@ unsafe fn spawn_apple(ctx: &mut Context)
 }
 
 #[inline(always)]
-unsafe fn update_frame(ctx: &mut Context, resulting_position: &mut Vec<f32>)
+fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_position: &mut Vec<f32>)
 {
     let mut end_position = ctx.snake.clone();
 
-    for animation in QUEUED_ANIMATIONS.iter_mut() {
+    for animation in animations {
         if animation.done() { continue }
 
         let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
 
+        // Lerp the head only. (TODO: last block of the tail as well.)
         for i in 0..12 {
             let delta = animation.end_position[i] - animation.start_position[i];
             end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.).round() * 10.;
@@ -487,9 +488,9 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>)
         .expect("should register `requestAnimationFrame` OK");
 }
 
-unsafe fn handle_key_action(ctx: &mut Context, key: u32)
+fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: u32)
 {
-    if !QUEUED_ANIMATIONS.is_empty() { return }
+    if !animations.is_empty() { return }
     let resulting_position: Option<Vec<f32>> = match key {
         87 | 119 /* w */  => {
             if ctx.direction == 83 || ctx.direction == 115 { return }
@@ -527,8 +528,8 @@ unsafe fn handle_key_action(ctx: &mut Context, key: u32)
     };
 
     if let Some(resulting_position) = resulting_position {
-        CTX.direction = key;
-        QUEUED_ANIMATIONS.push
+        ctx.direction = key;
+        animations.push
         (
             Animation {
                 start_time: now(),
