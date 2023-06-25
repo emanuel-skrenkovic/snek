@@ -16,6 +16,9 @@ const STEP: f32 = GRID_BOX_WIDTH;
 
 const SNAKE_STARTING_LEN: usize = 5;
 
+const SNAKE_COLOUR: [f32; 3] = [0.1, 0.65, 0.1];
+const APPLE_COLOUR: [f32; 3] = [0.65, 0.1, 0.1];
+
 static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
 static mut PAUSED: bool = true;
 static mut GAME_OVER: bool = false;
@@ -48,7 +51,7 @@ struct Context
     window_height: f32,
     window_width: f32,
     snake: Vec<f32>,
-    apple: Option<(u32, u32)>,
+    apple: Option<(f32, f32)>,
     direction: u32
 }
 
@@ -74,14 +77,17 @@ fn start() -> Result<(), JsValue>
         WebGl2RenderingContext::VERTEX_SHADER,
         r##"#version 300 es
 
-        in vec2 position;
-        in vec2 translation;
-
         uniform vec2 resolution;
 
+        in vec2 position;
+
+        in vec3 vertexColour;
+        out vec3 fragmentColour;
+
         void main() {
-            vec2 translated = position + translation;
-            vec2 zeroToOne = translated / resolution;
+            fragmentColour = vertexColour;
+
+            vec2 zeroToOne = position / resolution;
             vec2 zeroToTwo = zeroToOne * 2.0;
             vec2 clipSpace = zeroToTwo - 1.0;
             gl_Position = vec4(clipSpace, 0, 1);
@@ -96,10 +102,12 @@ fn start() -> Result<(), JsValue>
         r##"#version 300 es
 
         precision highp float;
-        out vec4 outColor;
+
+        in vec3 fragmentColour;
+        out vec4 outColour;
 
         void main() {
-            outColor = vec4(0.1, 0.65, 0.1, 1);
+            outColour = vec4(fragmentColour, 1.0);
         }
         "##
     )?;
@@ -116,8 +124,8 @@ fn start() -> Result<(), JsValue>
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
 
-    let mut initial   = Vec::with_capacity(2000);
-    let mut resulting = Vec::with_capacity(2000);
+    let mut resulting_position = Vec::with_capacity(2000);
+    let mut colours            = Vec::with_capacity(4000);
 
     unsafe {
         CTX = Context {
@@ -142,7 +150,7 @@ fn start() -> Result<(), JsValue>
                 handle_key_action(&mut CTX, *active_key);
             }
 
-            update_frame(&mut CTX, &mut initial, &mut resulting);
+            update_frame(&mut CTX, &mut resulting_position);
             spawn_apple(&mut CTX);
 
             if collisions(&CTX) {
@@ -154,22 +162,29 @@ fn start() -> Result<(), JsValue>
             context.clear_color(0.1, 0.2, 0.1, 1.0);
             context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
-            // TODO: have only one draw call per frame!!!
+            colours.append(&mut SNAKE_COLOUR.repeat(resulting_position.len() / 2));
 
+            // Apple
             {
-                let apple          = CTX.apple.unwrap();
-                let apple_vertices = create_box(apple.0 as f32, apple.1 as f32, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                draw_vertices(&context, &program, &apple_vertices, &apple_vertices)
-                    .expect("Drawing apple failed");
-                context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, apple_vertices.len() as i32 / 2);
+                let apple              = CTX.apple.unwrap();
+                let mut apple_vertices = create_box(apple.0, apple.1, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+
+                colours.append(&mut APPLE_COLOUR.repeat(apple_vertices.len() / 2));
+                resulting_position.append(&mut apple_vertices);
             }
 
-            {
-                let vertices_count = (initial.len() / 2) as i32;
-                draw_vertices(&context, &program, initial.drain(..).as_slice(), resulting.drain(..).as_slice())
-                    .expect("Drawing failed");
-                context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
-            }
+            let vertices_count = resulting_position.len() / 2;
+            let vertices_count= vertices_count as i32;
+
+            draw_vertices
+            (
+                &context,
+                &program,
+                resulting_position.drain(..).as_slice(),
+                colours.drain(..).as_slice()
+            ).expect("Drawing failed");
+
+            context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
 
             request_animation_frame(f.borrow().as_ref().unwrap());
         }));
@@ -205,17 +220,13 @@ unsafe fn spawn_apple(ctx: &mut Context)
     }
 
     let seed     = random() * 2000.;
-    let position = seed as usize % unoccupied.len();
-    ctx.apple    = Some((unoccupied[position].0 as u32, unoccupied[position].1 as u32));
+    let seed     = seed as usize;
+    let position = seed % unoccupied.len();
+    ctx.apple    = Some((unoccupied[position].0, unoccupied[position].1));
 }
 
 #[inline(always)]
-unsafe fn update_frame
-(
-    ctx: &mut Context,
-    initial: &mut Vec<f32>,
-    resulting: &mut Vec<f32>
-)
+unsafe fn update_frame(ctx: &mut Context, resulting_position: &mut Vec<f32>)
 {
     let mut end_position = ctx.snake.clone();
 
@@ -235,15 +246,12 @@ unsafe fn update_frame
             // underneath so the corners aren't "smoothed" while turning.
             // Head is excluded so the head movement animation remains smooth.
             // Otherwise the "below" tile would just appear at the end position.
-            initial.push(animation.end_position[i]);
-            resulting.push(animation.end_position[i]);
-
+            resulting_position.push(animation.end_position[i]);
             end_position[i] = animation.end_position[i];
         }
     }
 
-    initial.append(&mut ctx.snake.clone());
-    resulting.append(&mut end_position.clone());
+    resulting_position.append(&mut ctx.snake.clone());
 
     for i in (0..end_position.len()).step_by(12) {
         let x = end_position[i];
@@ -260,8 +268,7 @@ unsafe fn update_frame
             let width = width.min(GRID_BOX_WIDTH);
 
             let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
-            initial.append(&mut vertices.clone());
-            resulting.append(&mut vertices);
+            resulting_position.append(&mut vertices);
         }
 
         // Left
@@ -273,8 +280,7 @@ unsafe fn update_frame
         if x <= 0. {
             let hidden_width = 0. - x;
             let mut vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
-            initial.append(&mut vertices.clone());
-            resulting.append(&mut vertices);
+            resulting_position.append(&mut vertices);
         }
 
         // Up
@@ -286,8 +292,7 @@ unsafe fn update_frame
         if y + GRID_BOX_HEIGHT >= ctx.window_height {
             let height = y - ctx.window_height;
             let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-            initial.append(&mut vertices.clone());
-            resulting.append(&mut vertices);
+            resulting_position.append(&mut vertices);
         }
 
         // Down
@@ -299,8 +304,7 @@ unsafe fn update_frame
         if y <= 0. {
             let height = y.abs();
             let mut vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-            initial.append(&mut vertices.clone());
-            resulting.append(&mut vertices);
+            resulting_position.append(&mut vertices);
         }
     }
 
@@ -360,6 +364,7 @@ unsafe fn collisions(ctx: &Context) -> bool
     false
 }
 
+#[allow(dead_code)]
 fn format_coordinates(coordinates: &[f32]) -> String {
     let mut formatted_string = String::new();
 
@@ -597,59 +602,52 @@ fn draw_vertices
     context: &WebGl2RenderingContext,
     program: &WebGlProgram,
     vertices: &[f32],
-    translation: &[f32]
+    colours: &[f32]
 ) -> Result<(), String>
 {
+    let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
+    context.bind_vertex_array(Some(&vao));
+
     // Position
 
     {
         let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
         context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
 
-        let positions_array_buf = js_sys::Float32Array::new_with_length(vertices.len() as u32);
-        positions_array_buf.copy_from(vertices);
+        let array_buf = js_sys::Float32Array::new_with_length(vertices.len() as u32);
+        array_buf.copy_from(vertices);
 
         context.buffer_data_with_array_buffer_view
         (
             WebGl2RenderingContext::ARRAY_BUFFER,
-            &positions_array_buf,
+            &array_buf,
             WebGl2RenderingContext::DYNAMIC_DRAW,
         );
 
-        let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
-        context.bind_vertex_array(Some(&vao));
-
-        let position_attribute_location = context.get_attrib_location(program, "position") as u32;
-        context.vertex_attrib_pointer_with_i32(position_attribute_location, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
-        context.enable_vertex_attrib_array(position_attribute_location);
-
-        context.bind_vertex_array(Some(&vao));
+        let attrib_location = context.get_attrib_location(program, "position") as u32;
+        context.vertex_attrib_pointer_with_i32(attrib_location, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
+        context.enable_vertex_attrib_array(attrib_location);
     }
 
-    // Translation
+    // Colour
 
     {
         let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
         context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
 
-        let positions_array_buf = js_sys::Float32Array::new_with_length(translation.len() as u32);
-        positions_array_buf.copy_from(translation);
+        let array_buf = js_sys::Float32Array::new_with_length(colours.len() as u32);
+        array_buf.copy_from(colours);
 
         context.buffer_data_with_array_buffer_view
         (
             WebGl2RenderingContext::ARRAY_BUFFER,
-            &positions_array_buf,
+            &array_buf,
             WebGl2RenderingContext::DYNAMIC_DRAW,
         );
 
-        let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
-        context.bind_vertex_array(Some(&vao));
-
-        let position_attribute_location = context.get_attrib_location(program, "translation") as u32;
-        context.vertex_attrib_pointer_with_i32(position_attribute_location, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
-        context.enable_vertex_attrib_array(position_attribute_location);
-
-        context.bind_vertex_array(Some(&vao));
+        let attrib_location = context.get_attrib_location(program, "vertexColour") as u32;
+        context.vertex_attrib_pointer_with_i32(attrib_location, 3, WebGl2RenderingContext::FLOAT, false, 0, 0);
+        context.enable_vertex_attrib_array(attrib_location);
     }
 
     Ok(())
