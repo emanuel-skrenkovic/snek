@@ -88,11 +88,6 @@
     mkdirp "^1.0.4"
     rimraf "^3.0.2"
 
-"@sqlite.org/sqlite-wasm@^3.42.0-build1":
-  version "3.42.0-build1"
-  resolved "https://registry.npmjs.org/@sqlite.org/sqlite-wasm/-/sqlite-wasm-3.42.0-build1.tgz"
-  integrity sha512-uUKiCihaIMkIUBtzgiAM0+/mB/VQTb2P1U+ZbvNFPCyyIiFDdxIacn7+3WW1DTHYWmjCx1O70bw+iVbHyNrDUg==
-
 "@tootallnate/once@1":
   version "1.1.2"
   resolved "https://registry.yarnpkg.com/@tootallnate/once/-/once-1.1.2.tgz#ccb91445360179a04e7fe6aff78c00ffc1eeaf82"

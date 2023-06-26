@@ -1,0 +1,17 @@
+# fly.toml app configuration file generated for snek on 2023-06-25T21:54:16+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = "snek"
+primary_region = "arn"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
