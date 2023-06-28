@@ -223,15 +223,18 @@ fn spawn_apple(ctx: &mut Context)
 
     for i in (0..GRID_WIDTH * GRID_BOX_WIDTH as usize).step_by(GRID_BOX_WIDTH as usize) {
         for j in (0..GRID_HEIGHT * GRID_BOX_HEIGHT as usize).step_by(GRID_BOX_HEIGHT as usize) {
-            let mut contains = false;
+            let mut occupied = false;
 
             for k in (0..ctx.snake.len()).step_by(2) {
-                if ctx.snake[k] == i as f32 && ctx.snake[k + 1] == j as f32 { continue }
-                contains = true;
+                let snake = create_box(ctx.snake[k], ctx.snake[k + 1], GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                let block = create_box(i as f32, j as f32, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                if !box_collision(&snake, &block) { continue }
+
+                occupied = true;
                 break;
             }
 
-            if contains { unoccupied.push((i as f32, j as f32)); }
+            if !occupied { unoccupied.push((i as f32, j as f32)); }
         }
     }
 
