@@ -20,8 +20,16 @@ const name_input = (score) => {
     <form onsubmit="on_submit_score(event)">
         <label>Score: ${score}</label>
         <input id="score-input" type="text" autofocus maxlength="3" onchange="on_name_changed(event)" />
-        <button onclick="on_submit_score(event)">Save</button>\
+        <div>
+            <button id="save-button" onclick="on_submit_score(event)">Save</button>\
+        </div>
     </form>`
+
+    const save_button = document.querySelector('#save-button')
+    save_button.style.border          = 'none'
+    save_button.style.borderRadius    = '15px'
+    save_button.style.fontSize        = '32px'
+    save_button.style.backgroundColor = '#5cdb5c'
 }
 
 const save_score = (body) => fetch('/scores', {
@@ -42,7 +50,8 @@ const on_save = async (score) => {
         <tr>
             <td>${name}</td>
             <td>${score}</td>
-        </tr>`).reduce((agg, current) => `${agg}${current}`)
+        </tr>`
+    ).reduce((agg, current) => `${agg}${current}`)
 
     const table_body = `
         <table class="high-score-list">
@@ -62,21 +71,36 @@ const on_save = async (score) => {
         <br>
         High scores:
         <br>
-        ${table_body}`;
+        ${table_body}
+        
+        <div id="again">
+            <h2>Press space to start again.</h2>
+        </div>`;
+
+    const again = document.querySelector('#again')
+    again.style.color     = 'white'
+    again.style.position  = 'relative'
+    again.style.top       = '50%'
+    again.style.left      = '50%'
+    again.style.transform = 'translate(50%, 50%)'
 }
 
+window.scored       = (score) => overlay().innerHTML = `Score: ${score}`
 window.game_over    = (score) => name_input(score)
 window.pause        = () => overlay().innerText = 'PAUSED'
 window.clear_screen = () => overlay().innerText = ''
 
-window.scored = (score) => {
-    overlay().innerHTML = `Score: ${score}`
-}
-
 rust.then(m => {
-    window.addEventListener('keypress', m.key_press_event)
+    window.addEventListener('keydown', m.key_press_event)
+
+    overlay().innerHTML = `
+        Can you solve
+        <h2>the_snack_case!?!?!</h2>
+        
+        Press space to start the game.
+        Control the snek using WASD or arrow keys.`
+
     m.start()
 }).catch(console.error);
 
 const overlay = () => document.querySelector('#overlay')
-
