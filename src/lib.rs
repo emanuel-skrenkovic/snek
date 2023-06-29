@@ -28,7 +28,7 @@ static mut CTX: Context = Context {
     window_width: 0.0,
     snake: vec![],
     apple: None,
-    direction: 0,
+    direction: Direction::Left,
 };
 
 #[wasm_bindgen]
@@ -55,7 +55,7 @@ struct Context
     window_width: f32,
     snake: Vec<f32>,
     apple: Option<(f32, f32)>,
-    direction: u32
+    direction: Direction
 }
 
 #[wasm_bindgen(start)]
@@ -136,7 +136,7 @@ fn start() -> Result<(), JsValue>
             window_height,
             snake: vec![],
             apple: None,
-            direction: 97
+            direction: Direction::Left
         };
 
         initiate_game(window_width, window_height);
@@ -342,8 +342,8 @@ unsafe fn initiate_game(window_width: f32, window_height: f32)
 
     // Start off by going left.
     KEYS.clear();
-    KEYS.push(97);
-    CTX.direction = 97;
+    KEYS.push(Direction::Left);
+    CTX.direction = Direction::Left;
 
     for i in 0..SNAKE_STARTING_LEN {
         let mut part = create_box
@@ -477,7 +477,7 @@ impl Animation
     }
 }
 
-static mut KEYS: Vec<u32> = vec![];
+static mut KEYS: Vec<Direction> = vec![];
 
 fn window() -> web_sys::Window
 {
@@ -491,43 +491,46 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>)
         .expect("should register `requestAnimationFrame` OK");
 }
 
-fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: u32)
+fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Direction)
 {
     if !animations.is_empty() { return }
     let resulting_position: Option<Vec<f32>> = match key {
-        87 | 119 /* w */  => {
-            if ctx.direction == 83 || ctx.direction == 115 { return }
+        // 87 | 119 | 38 /* w */  => {
+        Direction::Up => {
+            if ctx.direction == Direction::Down { return }
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        83 | 115 /* s */ => {
-            if ctx.direction == 87 || ctx.direction == 119 { return }
+        // 83 | 115 | 40 /* s */ => {
+        Direction::Down => {
+            if ctx.direction == Direction::Up { return }
             let mut end_position = ctx.snake.clone();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        65 | 97 /* a */ => {
-            if ctx.direction == 68 || ctx.direction == 100 { return }
+        // 65 | 97 | 37 /* a */ => {
+        Direction::Left => {
+            if ctx.direction == Direction::Right { return }
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] -= STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        68 | 100 /* d */ => {
-            if ctx.direction == 65 || ctx.direction == 97 { return }
+        // 68 | 100 | 39 /* d */ => {
+        Direction::Right => {
+            if ctx.direction == Direction::Left { return }
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] += STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        _   => None
     };
 
     if let Some(resulting_position) = resulting_position {
@@ -561,6 +564,14 @@ fn move_snake(snake: &[f32], head_movement: &[f32]) -> Vec<f32>
     resulting_position
 }
 
+#[derive(PartialEq, Copy, Clone)]
+enum Direction {
+    Up = 1,
+    Down,
+    Left,
+    Right
+}
+
 /// Stores the event into the global state that holds all
 /// queued events. This is used for the 'keypress' dom event.
 #[wasm_bindgen]
@@ -569,38 +580,38 @@ pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
     let code = event.key_code();
     match code {
         // w
-        119 | 87 => {
-            if CTX.direction == 115 { return }
-            if !KEYS.contains(&code) && !KEYS.contains(&115) {
+        119 | 87 | 38 => {
+            if CTX.direction == Direction::Down { return }
+            if !KEYS.contains(&Direction::Up) && !KEYS.contains(&Direction::Down) {
                 KEYS.clear();
-                KEYS.push(event.key_code())
+                KEYS.push(Direction::Up)
             }
         }
 
         // s
-        115 | 83 => {
-            if CTX.direction == 119 { return }
-            if !KEYS.contains(&code) && !KEYS.contains(&119) {
+        115 | 83 | 40 => {
+            if CTX.direction == Direction::Up { return }
+            if !KEYS.contains(&Direction::Down) && !KEYS.contains(&Direction::Up) {
                 KEYS.clear();
-                KEYS.push(event.key_code())
+                KEYS.push(Direction::Down)
             }
         }
 
         // d
-        100 | 68 => {
-            if CTX.direction == 97 { return }
-            if !KEYS.contains(&code) && !KEYS.contains(&97) {
+        100 | 68 | 39 => {
+            if CTX.direction == Direction::Left { return }
+            if !KEYS.contains(&Direction::Right) && !KEYS.contains(&Direction::Left) {
                 KEYS.clear();
-                KEYS.push(event.key_code())
+                KEYS.push(Direction::Right)
             }
         }
 
         // a
-        97 | 65 => {
-            if CTX.direction == 100 { return }
-            if !KEYS.contains(&code) && !KEYS.contains(&100) {
+        97 | 65 | 37 => {
+            if CTX.direction == Direction::Right { return }
+            if !KEYS.contains(&Direction::Left) && !KEYS.contains(&Direction::Right) {
                 KEYS.clear();
-                KEYS.push(event.key_code())
+                KEYS.push(Direction::Left)
             }
         }
 
