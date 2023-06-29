@@ -368,8 +368,8 @@ fn box_collision(one: &[f32], two: &[f32]) -> bool
     // a.minY <= b.maxY &&
     // a.maxY >= b.minY &&
 
-    let collision_x = one[0] < two[0] + GRID_BOX_WIDTH - 15. && one[0] + GRID_BOX_WIDTH - 15. > two[0];
-    let collision_y = one[1] < two[1] + GRID_BOX_HEIGHT - 15. && one[1] + GRID_BOX_HEIGHT - 15. > two[1];
+    let collision_x = one[0] < two[0] + GRID_BOX_WIDTH - 5. && one[0] + GRID_BOX_WIDTH - 5. > two[0];
+    let collision_y = one[1] < two[1] + GRID_BOX_HEIGHT - 5. && one[1] + GRID_BOX_HEIGHT - 5. > two[1];
     collision_x && collision_y
 }
 
