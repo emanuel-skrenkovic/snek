@@ -98,7 +98,13 @@ rust.then(m => {
         <h2>the_snack_case!?!?!</h2>
         
         Press space to start the game.
-        Control the snek using WASD or arrow keys.`
+        Control the snek using WASD or arrow keys.
+    
+        <p>
+            <strong>Minimum system requirements:</strong>
+            <br>
+            - Apple Mac M2 Pro
+        </p>`
 
     m.start()
 }).catch(console.error);
