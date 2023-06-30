@@ -393,7 +393,7 @@ fn box_collision(one: &[f32], two: &[f32]) -> bool
 fn collisions(ctx: &Context) -> bool
 {
     let head = &ctx.snake[0..12];
-    for i in (24..ctx.snake.len()).step_by(12) {
+    for i in (36..ctx.snake.len()).step_by(12) {
         if box_collision(head, &ctx.snake[i..i + 12]) { return true }
     }
 
