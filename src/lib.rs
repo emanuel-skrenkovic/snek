@@ -515,7 +515,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Down { return }
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
-                end_position[i] = ((end_position[i] + STEP) / 10.).round() * 10.;
+                end_position[i] = ((end_position[i]) / 10.).round() * 10. + STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
@@ -524,7 +524,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Up { return }
             let mut end_position = ctx.snake.clone();
             for i in (1..end_position.len()).step_by(2) {
-                end_position[i] = ((end_position[i] - STEP) / 10.).round() * 10.;
+                end_position[i] = ((end_position[i]) / 10.).round() * 10. - STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
@@ -533,7 +533,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Right { return }
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
-                end_position[i] = ((end_position[i] - STEP) / 10.).round() * 10.;
+                end_position[i] = ((end_position[i]) / 10.).round() * 10. - STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
@@ -542,7 +542,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Left { return }
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
-                end_position[i] = ((end_position[i] + STEP) / 10.).round() * 10.;
+                end_position[i] = ((end_position[i]) / 10.).round() * 10. + STEP;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
