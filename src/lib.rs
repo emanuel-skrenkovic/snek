@@ -327,8 +327,7 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
         // Lerp the head only. (TODO: last block of the tail as well.)
         for i in 0..12 {
             let delta = animation.end_position[i] - animation.start_position[i];
-            end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.)
-                .round() * 10.;
+            end_position[i] = animation.start_position[i] + delta * interpolation_factor;
         }
 
         for i in 12..animation.start_position.len() {
