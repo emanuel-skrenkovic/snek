@@ -25,11 +25,11 @@ const name_input = (score) => {
         </div>
     </form>`
 
-    const save_button = document.querySelector('#save-button')
-    save_button.style.border          = 'none'
-    save_button.style.borderRadius    = '15px'
-    save_button.style.fontSize        = '32px'
-    save_button.style.backgroundColor = '#5cdb5c'
+    const save_button_style = document.querySelector('#save-button').style
+    save_button_style.border          = 'none'
+    save_button_style.borderRadius    = '15px'
+    save_button_style.fontSize        = '32px'
+    save_button_style.backgroundColor = '#5cdb5c'
 }
 
 const save_score = (body) => fetch('/scores', {
@@ -77,12 +77,12 @@ const on_save = async (score) => {
             <h2>Press space to start again.</h2>
         </div>`;
 
-    const again = document.querySelector('#again')
-    again.style.color     = 'white'
-    again.style.position  = 'relative'
-    again.style.top       = '50%'
-    again.style.left      = '50%'
-    again.style.transform = 'translate(50%, 50%)'
+    const again_style = document.querySelector('#again').style
+    again_style.color     = 'white'
+    again_style.position  = 'relative'
+    again_style.top       = '50%'
+    again_style.left      = '50%'
+    again_style.transform = 'translate(50%, 50%)'
 }
 
 window.scored       = (score) => overlay().innerHTML = `Score: ${score}`

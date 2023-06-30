@@ -58,6 +58,14 @@ struct Context
     direction: Direction
 }
 
+#[derive(PartialEq, Copy, Clone)]
+enum Direction {
+    Up = 1,
+    Down,
+    Left,
+    Right
+}
+
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue>
 {
@@ -447,8 +455,6 @@ fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
     ]
 }
 
-
-
 #[derive(Debug)]
 struct Animation
 {
@@ -494,8 +500,9 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>)
 fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Direction)
 {
     if !animations.is_empty() { return }
+
     let resulting_position: Option<Vec<f32>> = match key {
-        // 87 | 119 | 38 /* w */  => {
+        // 87 | 119 | 38 /* w or up arrow */  => {
         Direction::Up => {
             if ctx.direction == Direction::Down { return }
             let mut end_position = ctx.snake[0..12].to_vec();
@@ -504,7 +511,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        // 83 | 115 | 40 /* s */ => {
+        // 83 | 115 | 40 /* s or down arrow */ => {
         Direction::Down => {
             if ctx.direction == Direction::Up { return }
             let mut end_position = ctx.snake.clone();
@@ -513,7 +520,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        // 65 | 97 | 37 /* a */ => {
+        // 65 | 97 | 37 /* a or left arrow */ => {
         Direction::Left => {
             if ctx.direction == Direction::Right { return }
             let mut end_position = ctx.snake.clone();
@@ -522,7 +529,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
-        // 68 | 100 | 39 /* d */ => {
+        // 68 | 100 | 39 /* d or right arrow */ => {
         Direction::Right => {
             if ctx.direction == Direction::Left { return }
             let mut end_position = ctx.snake.clone();
@@ -564,21 +571,14 @@ fn move_snake(snake: &[f32], head_movement: &[f32]) -> Vec<f32>
     resulting_position
 }
 
-#[derive(PartialEq, Copy, Clone)]
-enum Direction {
-    Up = 1,
-    Down,
-    Left,
-    Right
-}
+
 
 /// Stores the event into the global state that holds all
 /// queued events. This is used for the 'keypress' dom event.
 #[wasm_bindgen]
 pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
 {
-    let code = event.key_code();
-    match code {
+    match event.key_code() {
         // w
         119 | 87 | 38 => {
             if CTX.direction == Direction::Down { return }
@@ -665,7 +665,10 @@ fn draw_vertices
         );
 
         let attrib_location = context.get_attrib_location(program, "position") as u32;
-        context.vertex_attrib_pointer_with_i32(attrib_location, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
+        context.vertex_attrib_pointer_with_i32
+        (
+            attrib_location, 2, WebGl2RenderingContext::FLOAT, false, 0, 0
+        );
         context.enable_vertex_attrib_array(attrib_location);
     }
 
@@ -686,14 +689,18 @@ fn draw_vertices
         );
 
         let attrib_location = context.get_attrib_location(program, "vertexColour") as u32;
-        context.vertex_attrib_pointer_with_i32(attrib_location, 3, WebGl2RenderingContext::FLOAT, false, 0, 0);
+        context.vertex_attrib_pointer_with_i32
+        (
+            attrib_location, 3, WebGl2RenderingContext::FLOAT, false, 0, 0
+        );
         context.enable_vertex_attrib_array(attrib_location);
     }
 
     Ok(())
 }
 
-pub fn compile_shader(
+pub fn compile_shader
+(
     context: &WebGl2RenderingContext,
     shader_type: u32,
     source: &str
@@ -721,7 +728,8 @@ pub fn compile_shader(
     }
 }
 
-pub fn link_program(
+pub fn link_program
+(
     context: &WebGl2RenderingContext,
     vertex_shader: &WebGlShader,
     fragment_shader: &WebGlShader,
