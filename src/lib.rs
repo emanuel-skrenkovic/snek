@@ -265,7 +265,8 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
         // Lerp the head only. (TODO: last block of the tail as well.)
         for i in 0..12 {
             let delta = animation.end_position[i] - animation.start_position[i];
-            end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.).round() * 10.;
+            end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.)
+                .round() * 10.;
         }
 
         for i in 12..animation.start_position.len() {
@@ -507,7 +508,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Down { return }
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
-                end_position[i] += STEP;
+                end_position[i] = ((end_position[i] + STEP) / 10.).round() * 10.;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
@@ -516,7 +517,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Up { return }
             let mut end_position = ctx.snake.clone();
             for i in (1..end_position.len()).step_by(2) {
-                end_position[i] -= STEP;
+                end_position[i] = ((end_position[i] - STEP) / 10.).round() * 10.;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
@@ -525,7 +526,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Right { return }
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
-                end_position[i] -= STEP;
+                end_position[i] = ((end_position[i] - STEP) / 10.).round() * 10.;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
@@ -534,7 +535,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Left { return }
             let mut end_position = ctx.snake.clone();
             for i in (0..end_position.len()).step_by(2) {
-                end_position[i] += STEP;
+                end_position[i] = ((end_position[i] + STEP) / 10.).round() * 10.;
             }
             Some(move_snake(&ctx.snake, &end_position))
         },
