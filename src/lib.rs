@@ -731,7 +731,7 @@ pub fn compile_shader
         false => Err(
             context
                 .get_shader_info_log(&shader)
-                .unwrap_or_else(|| String::from("Uknown error creating shader"))
+                .unwrap_or_else(|| String::from("Unknown error creating shader"))
         )
     }
 }
