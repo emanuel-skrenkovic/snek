@@ -155,22 +155,6 @@ fn start() -> Result<(), JsValue>
                 return
             }
 
-            QUEUED_ANIMATIONS.retain(|a| {
-                let done = a.done();
-                // Finish off the animation movement if it has ended.
-                // This is to avoid misalignment of the snake end position
-                // if the frame rate does not match the animation end time.
-                if done { a.end_position.clone_into(&mut CTX.snake) }
-                !done
-            });
-
-            for active_key in &KEYS {
-                handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
-            }
-
-            snake_movement(&mut CTX, &QUEUED_ANIMATIONS, &mut resulting_position);
-            spawn_apple(&mut CTX);
-
             if collisions(&CTX) {
                 GAME_OVER = true;
                 game_over(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
@@ -191,6 +175,77 @@ fn start() -> Result<(), JsValue>
                 CTX.apple = None;
                 scored(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
             }
+
+            QUEUED_ANIMATIONS.retain(|a| {
+                let done = a.done();
+                // Finish off the animation movement if it has ended.
+                // This is to avoid misalignment of the snake end position
+                // if the frame rate does not match the animation end time.
+                // if done { a.end_position.clone_into(&mut CTX.snake) }
+                if done {
+                    CTX.snake[0..12].copy_from_slice(&a.end_position[0..12]);
+                    let x = CTX.snake[0];
+                    let y = CTX.snake[1];
+
+                    // Right
+                    if x >= CTX.window_width {
+                        CTX.snake[0..12]
+                            .copy_from_slice(&create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+                    }
+
+                    if x + GRID_BOX_WIDTH > CTX.window_width {
+                        let width = (x + GRID_BOX_WIDTH) - CTX.window_width;
+                        let width = width.min(GRID_BOX_WIDTH);
+
+                        let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
+                        resulting_position.append(&mut vertices);
+                    }
+
+                    // Left
+                    if x + GRID_BOX_WIDTH <= 0. {
+                        CTX.snake[0..12]
+                            .copy_from_slice(&create_box(CTX.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+                    }
+
+                    if x <= 0. {
+                        let hidden_width = 0. - x;
+                        let mut vertices = create_box(CTX.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
+                        resulting_position.append(&mut vertices);
+                    }
+
+                    // Up
+                    if y >= CTX.window_height {
+                        CTX.snake[0..12]
+                            .copy_from_slice(&create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+                    }
+
+                    if y + GRID_BOX_HEIGHT >= CTX.window_height {
+                        let height = y - CTX.window_height;
+                        let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                        resulting_position.append(&mut vertices);
+                    }
+
+                    // Down
+                    if y + GRID_BOX_HEIGHT <= 0. {
+                        CTX.snake[0..12]
+                            .copy_from_slice(&create_box(x, CTX.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+                    }
+
+                    if y <= 0. {
+                        let height = y.abs();
+                        let mut vertices = create_box(x, CTX.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                        resulting_position.append(&mut vertices);
+                    }
+                }
+                !done
+            });
+
+            for active_key in &KEYS {
+                handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
+            }
+
+            snake_movement(&mut CTX, &QUEUED_ANIMATIONS, &mut resulting_position);
+            spawn_apple(&mut CTX);
 
             colours.append(&mut SNAKE_COLOUR.repeat(resulting_position.len() / 2));
 
