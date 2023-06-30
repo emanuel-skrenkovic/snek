@@ -155,7 +155,14 @@ fn start() -> Result<(), JsValue>
                 return
             }
 
-            QUEUED_ANIMATIONS.retain(|a| !a.done());
+            QUEUED_ANIMATIONS.retain(|a| {
+                let done = a.done();
+                // Finish off the animation movement if it has ended.
+                // This is to avoid misalignment of the snake end position
+                // if the frame rate does not match the animation end time.
+                if done { a.end_position.clone_into(&mut CTX.snake) }
+                !done
+            });
 
             for active_key in &KEYS {
                 handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
