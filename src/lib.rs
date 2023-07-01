@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use js_sys::Math::random;
 
+use js_sys::Math::random;
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
 
@@ -178,65 +178,15 @@ fn start() -> Result<(), JsValue>
 
             QUEUED_ANIMATIONS.retain(|a| {
                 let done = a.done();
+
                 // Finish off the animation movement if it has ended.
                 // This is to avoid misalignment of the snake end position
                 // if the frame rate does not match the animation end time.
-                // if done { a.end_position.clone_into(&mut CTX.snake) }
                 if done {
                     CTX.snake[0..12].copy_from_slice(&a.end_position[0..12]);
-                    let x = CTX.snake[0];
-                    let y = CTX.snake[1];
-
-                    // Right
-                    if x >= CTX.window_width {
-                        CTX.snake[0..12]
-                            .copy_from_slice(&create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
-                    }
-
-                    if x + GRID_BOX_WIDTH > CTX.window_width {
-                        let width = (x + GRID_BOX_WIDTH) - CTX.window_width;
-                        let width = width.min(GRID_BOX_WIDTH);
-
-                        let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
-                        resulting_position.append(&mut vertices);
-                    }
-
-                    // Left
-                    if x + GRID_BOX_WIDTH <= 0. {
-                        CTX.snake[0..12]
-                            .copy_from_slice(&create_box(CTX.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
-                    }
-
-                    if x <= 0. {
-                        let hidden_width = 0. - x;
-                        let mut vertices = create_box(CTX.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
-                        resulting_position.append(&mut vertices);
-                    }
-
-                    // Up
-                    if y >= CTX.window_height {
-                        CTX.snake[0..12]
-                            .copy_from_slice(&create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
-                    }
-
-                    if y + GRID_BOX_HEIGHT >= CTX.window_height {
-                        let height = y - CTX.window_height;
-                        let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                        resulting_position.append(&mut vertices);
-                    }
-
-                    // Down
-                    if y + GRID_BOX_HEIGHT <= 0. {
-                        CTX.snake[0..12]
-                            .copy_from_slice(&create_box(x, CTX.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
-                    }
-
-                    if y <= 0. {
-                        let height = y.abs();
-                        let mut vertices = create_box(x, CTX.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                        resulting_position.append(&mut vertices);
-                    }
+                    block_exceeds_screen_edge(&CTX, &mut CTX.snake[0..12], &mut resulting_position);
                 }
+
                 !done
             });
 
@@ -344,58 +294,7 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
     resulting_position.append(&mut ctx.snake.clone());
 
     for i in (0..end_position.len()).step_by(12) {
-        let x = end_position[i];
-        let y = end_position[i + 1];
-
-        // Right
-        if x >= ctx.window_width {
-            end_position[i..i + 12]
-                .copy_from_slice(&create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
-        }
-
-        if x + GRID_BOX_WIDTH > ctx.window_width {
-            let width = (x + GRID_BOX_WIDTH) - ctx.window_width;
-            let width = width.min(GRID_BOX_WIDTH);
-
-            let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
-            resulting_position.append(&mut vertices);
-        }
-
-        // Left
-        if x + GRID_BOX_WIDTH <= 0. {
-            end_position[i..i + 12]
-                .copy_from_slice(&create_box(ctx.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
-        }
-
-        if x <= 0. {
-            let hidden_width = 0. - x;
-            let mut vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
-            resulting_position.append(&mut vertices);
-        }
-
-        // Up
-        if y >= ctx.window_height {
-            end_position[i..i + 12]
-                .copy_from_slice(&create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
-        }
-
-        if y + GRID_BOX_HEIGHT >= ctx.window_height {
-            let height = y - ctx.window_height;
-            let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-            resulting_position.append(&mut vertices);
-        }
-
-        // Down
-        if y + GRID_BOX_HEIGHT <= 0. {
-            end_position[i..i + 12]
-                .copy_from_slice(&create_box(x, ctx.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
-        }
-
-        if y <= 0. {
-            let height = y.abs();
-            let mut vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-            resulting_position.append(&mut vertices);
-        }
+        block_exceeds_screen_edge(ctx, &mut end_position[i..i + 12], resulting_position);
     }
 
     ctx.snake = end_position;
@@ -425,6 +324,70 @@ unsafe fn initiate_game(window_width: f32, window_height: f32)
         );
 
         CTX.snake.append(&mut part);
+    }
+}
+
+#[inline(always)]
+fn block_exceeds_screen_edge
+(
+    ctx: &Context,
+    block: &mut [f32],
+    resulting_position: &mut Vec<f32>
+)
+{
+    let x = block[0];
+    let y = block[1];
+
+    // Right
+    if x >= ctx.window_width {
+        block.copy_from_slice(&create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+    }
+
+    if x + GRID_BOX_WIDTH > ctx.window_width {
+        let width = (x + GRID_BOX_WIDTH) - ctx.window_width;
+        let width = width.min(GRID_BOX_WIDTH);
+
+        let mut vertices = create_box(0., y, width, GRID_BOX_HEIGHT);
+        resulting_position.append(&mut vertices);
+    }
+
+    // Left
+    if x + GRID_BOX_WIDTH <= 0. {
+        block.copy_from_slice
+        (
+            &create_box(ctx.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT)
+        );
+    }
+
+    if x <= 0. {
+        let hidden_width = 0. - x;
+        let mut vertices = create_box(ctx.window_width - hidden_width, y, hidden_width, GRID_BOX_HEIGHT);
+        resulting_position.append(&mut vertices);
+    }
+
+    // Up
+    if y >= ctx.window_height {
+        block.copy_from_slice(&create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT));
+    }
+
+    if y + GRID_BOX_HEIGHT >= ctx.window_height {
+        let height = y - ctx.window_height;
+        let mut vertices = create_box(x, height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+        resulting_position.append(&mut vertices);
+    }
+
+    // Down
+    if y + GRID_BOX_HEIGHT <= 0. {
+        block.copy_from_slice
+        (
+            &create_box(x, ctx.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT)
+        );
+    }
+
+    if y <= 0. {
+        let height = y.abs();
+        let mut vertices = create_box(x, ctx.window_height - height, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+        resulting_position.append(&mut vertices);
     }
 }
 
