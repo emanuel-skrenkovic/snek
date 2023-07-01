@@ -245,7 +245,7 @@ fn spawn_apple(ctx: &mut Context)
         for j in (0..GRID_HEIGHT * GRID_BOX_HEIGHT as usize).step_by(GRID_BOX_HEIGHT as usize) {
             let mut occupied = false;
 
-            for k in (0..ctx.snake.len()).step_by(2) {
+            for k in (0..ctx.snake.len()).step_by(12) {
                 let snake = create_box(ctx.snake[k], ctx.snake[k + 1], GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
                 let block = create_box(i as f32, j as f32, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
                 if !box_collision(&snake, &block) { continue }
