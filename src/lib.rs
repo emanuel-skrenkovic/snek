@@ -181,7 +181,7 @@ fn start() -> Result<(), JsValue>
                         GRID_BOX_HEIGHT
                     )
                 );
-                CTX.apple = None;
+                CTX.apple = Some(spawn_apple(&CTX));
                 scored(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
             }
 
@@ -192,7 +192,6 @@ fn start() -> Result<(), JsValue>
             }
 
             snake_movement(&mut CTX, &QUEUED_ANIMATIONS, &mut resulting_position);
-            spawn_apple(&mut CTX);
 
             for active_key in &KEYS {
                 handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
@@ -233,10 +232,8 @@ fn start() -> Result<(), JsValue>
 }
 
 #[inline(always)]
-fn spawn_apple(ctx: &mut Context)
+fn spawn_apple(ctx: &Context) -> (f32, f32)
 {
-    if ctx.apple.is_some() { return }
-
     let vertical_blocks   = GRID_WIDTH / GRID_BOX_WIDTH as usize;
     let horizontal_blocks = GRID_HEIGHT / GRID_BOX_HEIGHT as usize;
 
@@ -262,7 +259,8 @@ fn spawn_apple(ctx: &mut Context)
     let seed     = random() * 2000.;
     let seed     = seed as usize;
     let position = seed % unoccupied.len();
-    ctx.apple    = Some((unoccupied[position].0, unoccupied[position].1));
+
+    (unoccupied[position].0, unoccupied[position].1)
 }
 
 #[inline(always)]
@@ -332,6 +330,8 @@ unsafe fn initiate_game(window_width: f32, window_height: f32)
 
         CTX.snake.append(&mut part);
     }
+
+    CTX.apple = Some(spawn_apple(&CTX));
 }
 
 #[inline(always)]
