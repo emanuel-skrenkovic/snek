@@ -58,7 +58,7 @@ struct Context
     direction: Direction
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 enum Direction {
     Up = 1,
     Down,
@@ -280,7 +280,8 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
             end_position[i] = animation.start_position[i] + delta * interpolation_factor;
         }
 
-        for i in 12..animation.start_position.len() {
+        let animation_len = animation.start_position.len();
+        for i in 12..animation_len {
             // Fills the background of the snake with snake body tiles.
             // This is so "turns" are smoother - they are filled with a snake tile
             // underneath so the corners aren't "smoothed" while turning.
@@ -288,6 +289,11 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
             // Otherwise the "below" tile would just appear at the end position.
             resulting_position.push(animation.end_position[i]);
             end_position[i] = animation.end_position[i];
+        }
+
+        for i in animation_len - 12..animation_len {
+            let delta = animation.end_position[i] - animation.start_position[i];
+            end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.).round() * 10.;
         }
     }
 
@@ -534,34 +540,34 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] = ((end_position[i]) / 10.).round() * 10. + STEP;
             }
-            Some(move_snake(&ctx.snake, &end_position))
+            Some(move_snake_2(ctx, &ctx.snake, &end_position))
         },
         // 83 | 115 | 40 /* s or down arrow */ => {
         Direction::Down => {
             if ctx.direction == Direction::Up { return }
-            let mut end_position = ctx.snake.clone();
+            let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] = ((end_position[i]) / 10.).round() * 10. - STEP;
             }
-            Some(move_snake(&ctx.snake, &end_position))
+            Some(move_snake_2(ctx, &ctx.snake, &end_position))
         },
         // 65 | 97 | 37 /* a or left arrow */ => {
         Direction::Left => {
             if ctx.direction == Direction::Right { return }
-            let mut end_position = ctx.snake.clone();
+            let mut end_position = ctx.snake[0..12].to_vec();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] = ((end_position[i]) / 10.).round() * 10. - STEP;
             }
-            Some(move_snake(&ctx.snake, &end_position))
+            Some(move_snake_2(ctx, &ctx.snake, &end_position))
         },
         // 68 | 100 | 39 /* d or right arrow */ => {
         Direction::Right => {
             if ctx.direction == Direction::Left { return }
-            let mut end_position = ctx.snake.clone();
+            let mut end_position = ctx.snake[0..12].to_vec();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] = ((end_position[i]) / 10.).round() * 10. + STEP;
             }
-            Some(move_snake(&ctx.snake, &end_position))
+            Some(move_snake_2(ctx, &ctx.snake, &end_position))
         },
     };
 
@@ -583,6 +589,111 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
 }
 
 #[inline(always)]
+fn movement_direction(previous: &[f32], next: &[f32]) -> Option<Direction>
+{
+    let previous_x = previous[0];
+    let previous_y = previous[1];
+
+    let next_x = next[0];
+    let next_y = next[1];
+
+    let distance_x = previous_x - next_x;
+    let distance_y = previous_y - next_y;
+
+    // Previous block is on the left part of the screen, while the current one is on the right.
+    if distance_x.abs() > GRID_BOX_WIDTH && previous_x < next_x {
+        return Some(Direction::Right)
+    }
+
+    // Previous block is on the right part of the screen, while the current one is on the left.
+    if distance_x.abs() > GRID_BOX_WIDTH && previous_x > next_x {
+        return Some(Direction::Left)
+    }
+
+    // Previous block is on the bottom part of the screen, while the current one is on the top.
+    if distance_y.abs() > GRID_BOX_HEIGHT && previous_y < next_y {
+        return Some(Direction::Up)
+    }
+
+    // Previous block is on the top part of the screen, while the current one is on the bottom.
+    if distance_y.abs() > GRID_BOX_HEIGHT && previous_y > next_y {
+        return Some(Direction::Down)
+    }
+
+    if previous_x == next_x && previous_y > next_y {
+        return Some(Direction::Up)
+    }
+
+    if previous_x == next_x && previous_y < next_y {
+        return Some(Direction::Down)
+    }
+
+    if previous_y == next_y && previous_x > next_x {
+        return Some(Direction::Right)
+    }
+
+    if previous_y == next_y && previous_x < next_x {
+        return Some(Direction::Left)
+    }
+
+    None
+}
+
+#[inline(always)]
+fn move_snake_2(
+    ctx: &Context,
+    snake: &[f32],
+    head_movement: &[f32]
+) -> Vec<f32>
+{
+    let mut resulting_position = vec![0.; snake.len()];
+    let mut previous_position  = head_movement.to_vec();
+
+    for part in (0..snake.len()).step_by(12) {
+        // Apply the movement and direction using the delta between the
+        // current and the previous block.
+
+        // Do mutations to 'previous_position' with correct direction.
+        let direction = movement_direction(&previous_position[..12], &snake[part..part + 12]);
+        match direction {
+            Some(Direction::Up) => {
+                for i in (1..previous_position.len()).step_by(2) {
+                    previous_position[i] = ((snake[part + i]) / 10.).round() * 10. + STEP;
+                }
+            }
+            Some(Direction::Down) => {
+                for i in (1..previous_position.len()).step_by(2) {
+                    previous_position[i] = ((snake[part + i]) / 10.).round() * 10. - STEP;
+                }
+            }
+            Some(Direction::Left) => {
+                for i in (0..previous_position.len()).step_by(2) {
+                    previous_position[i] = ((snake[part + i]) / 10.).round() * 10. - STEP;
+                }
+            }
+            Some(Direction::Right) => {
+                for i in (0..previous_position.len()).step_by(2) {
+                    previous_position[i] = ((snake[part + i]) / 10.).round() * 10. + STEP;
+                }
+            }
+            _ => { }
+        }
+
+        resulting_position[part..part + 12].copy_from_slice(&previous_position[..12]);
+        block_exceeds_screen_edge
+        (
+            ctx,
+            &mut previous_position,
+            &mut resulting_position
+        );
+
+        previous_position = snake[part..part + 12].to_vec();
+    }
+
+    resulting_position
+}
+
+#[inline(always)]
 fn move_snake(snake: &[f32], head_movement: &[f32]) -> Vec<f32>
 {
     let mut resulting_position = vec![0.; snake.len()];
@@ -595,8 +706,6 @@ fn move_snake(snake: &[f32], head_movement: &[f32]) -> Vec<f32>
 
     resulting_position
 }
-
-
 
 /// Stores the event into the global state that holds all
 /// queued events. This is used for the 'keypress' dom event.
