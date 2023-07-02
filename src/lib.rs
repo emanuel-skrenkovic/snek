@@ -155,6 +155,10 @@ fn start() -> Result<(), JsValue>
                 return
             }
 
+            for active_key in &KEYS {
+                handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
+            }
+
             QUEUED_ANIMATIONS.retain(|a| {
                 let done = a.done();
 
@@ -164,6 +168,15 @@ fn start() -> Result<(), JsValue>
                 if done {
                     CTX.snake[0..12].copy_from_slice(&a.end_position[0..12]);
                     block_exceeds_screen_edge(&CTX, &mut CTX.snake[0..12], &mut resulting_position);
+
+                    let snake_len = CTX.snake.len();
+
+                    block_exceeds_screen_edge
+                    (
+                        &CTX,
+                        &mut CTX.snake[snake_len - 12..snake_len],
+                        &mut resulting_position
+                    );
                 }
 
                 !done
@@ -193,10 +206,6 @@ fn start() -> Result<(), JsValue>
 
             snake_movement(&mut CTX, &QUEUED_ANIMATIONS, &mut resulting_position);
 
-            for active_key in &KEYS {
-                handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
-            }
-
             colours.append(&mut SNAKE_COLOUR.repeat(resulting_position.len() / 2));
 
             if let Some(apple) = CTX.apple {
@@ -209,6 +218,7 @@ fn start() -> Result<(), JsValue>
             let vertices_count = resulting_position.len() / 2;
             let vertices_count= vertices_count as i32;
 
+            // Background colour.
             context.clear_color(0.1, 0.2, 0.1, 1.0);
             context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
@@ -274,7 +284,7 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
         let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
         let animation_len = animation.start_position.len();
 
-        // Lerp the head only. (TODO: last block of the tail as well.)
+        // Lerp the head.
         for i in 0..12 {
             let delta = animation.end_position[i] - animation.start_position[i];
             end_position[i] = animation.start_position[i] + delta * interpolation_factor;
@@ -290,9 +300,40 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
             end_position[i] = animation.end_position[i];
         }
 
+        // Also lerp the tail.
         for i in animation_len - 12..animation_len {
             let delta = animation.end_position[i] - animation.start_position[i];
             end_position[i] = ((animation.start_position[i] + delta * interpolation_factor) / 10.).round() * 10.;
+        }
+    }
+
+    // Fill out the preceding block of the tail.
+    // This avoids having a gap in front of the tail block
+    // when crossing the screen boundary.
+    {
+        let snake_len = ctx.snake.len();
+
+        let x = ctx.snake[snake_len - 12];
+        let y = ctx.snake[snake_len - 11];
+
+        if x < 0. {
+            let mut vertices = create_box(ctx.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            resulting_position.append(&mut vertices);
+        }
+
+        if x + GRID_BOX_WIDTH > ctx.window_width {
+            let mut vertices = create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            resulting_position.append(&mut vertices);
+        }
+
+        if y < 0. {
+            let mut vertices = create_box(x, ctx.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            resulting_position.append(&mut vertices);
+        }
+
+        if y + GRID_BOX_HEIGHT > ctx.window_height {
+            let mut vertices = create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+            resulting_position.append(&mut vertices);
         }
     }
 
@@ -307,7 +348,7 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
 
 unsafe fn initiate_game(window_width: f32, window_height: f32)
 {
-    PAUSED = true;
+    PAUSED    = true;
     GAME_OVER = false;
 
     QUEUED_ANIMATIONS.clear();
@@ -538,6 +579,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
         // 87 | 119 | 38 /* w or up arrow */  => {
         Direction::Up => {
             if ctx.direction == Direction::Down { return }
+
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] = ((end_position[i]) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT + STEP;
@@ -547,6 +589,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
         // 83 | 115 | 40 /* s or down arrow */ => {
         Direction::Down => {
             if ctx.direction == Direction::Up { return }
+
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
                 end_position[i] = ((end_position[i]) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT - STEP;
@@ -556,6 +599,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
         // 65 | 97 | 37 /* a or left arrow */ => {
         Direction::Left => {
             if ctx.direction == Direction::Right { return }
+
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] = ((end_position[i]) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH - STEP;
@@ -565,6 +609,7 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
         // 68 | 100 | 39 /* d or right arrow */ => {
         Direction::Right => {
             if ctx.direction == Direction::Left { return }
+
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (0..end_position.len()).step_by(2) {
                 end_position[i] = ((end_position[i]) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH + STEP;
