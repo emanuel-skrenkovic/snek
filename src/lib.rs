@@ -155,27 +155,6 @@ fn start() -> Result<(), JsValue>
                 return
             }
 
-            if collisions(&CTX) {
-                GAME_OVER = true;
-                game_over(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
-                initiate_game(window_width, window_height);
-            }
-
-            if did_the_snek_eat_the_apple(&CTX) {
-                let snake_len = CTX.snake.len();
-                let mut new_tail = create_box
-                (
-                    CTX.snake[snake_len - 12], // x coord of the last block
-                    CTX.snake[snake_len - 11], // y coord of the last block
-                    GRID_BOX_WIDTH,
-                    GRID_BOX_HEIGHT
-                );
-
-                CTX.snake.append(&mut new_tail);
-                CTX.apple = None;
-                scored(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
-            }
-
             QUEUED_ANIMATIONS.retain(|a| {
                 let done = a.done();
 
@@ -190,12 +169,34 @@ fn start() -> Result<(), JsValue>
                 !done
             });
 
-            for active_key in &KEYS {
-                handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
+            if did_the_snek_eat_the_apple(&CTX) {
+                let snake_len = CTX.snake.len();
+                CTX.snake.append
+                (
+                    &mut create_box
+                    (
+                        CTX.snake[snake_len - 12],
+                        CTX.snake[snake_len - 11],
+                        GRID_BOX_WIDTH,
+                        GRID_BOX_HEIGHT
+                    )
+                );
+                CTX.apple = None;
+                scored(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
+            }
+
+            if collisions(&CTX) {
+                GAME_OVER = true;
+                game_over(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
+                initiate_game(window_width, window_height);
             }
 
             snake_movement(&mut CTX, &QUEUED_ANIMATIONS, &mut resulting_position);
             spawn_apple(&mut CTX);
+
+            for active_key in &KEYS {
+                handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
+            }
 
             colours.append(&mut SNAKE_COLOUR.repeat(resulting_position.len() / 2));
 
@@ -273,6 +274,7 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
         if animation.done() { continue }
 
         let interpolation_factor = (animation.elapsed() / animation.duration) as f32;
+        let animation_len = animation.start_position.len();
 
         // Lerp the head only. (TODO: last block of the tail as well.)
         for i in 0..12 {
@@ -280,7 +282,6 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
             end_position[i] = animation.start_position[i] + delta * interpolation_factor;
         }
 
-        let animation_len = animation.start_position.len();
         for i in 12..animation_len {
             // Fills the background of the snake with snake body tiles.
             // This is so "turns" are smoother - they are filled with a snake tile
@@ -473,6 +474,7 @@ fn now() -> f64
     js_sys::Date::now()
 }
 
+#[inline(always)]
 fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
 {
     vec![
@@ -538,36 +540,36 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
             if ctx.direction == Direction::Down { return }
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
-                end_position[i] = ((end_position[i]) / 10.).round() * 10. + STEP;
+                end_position[i] = ((end_position[i]) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT + STEP;
             }
-            Some(move_snake_2(ctx, &ctx.snake, &end_position))
+            Some(move_snake(ctx, &ctx.snake, &end_position))
         },
         // 83 | 115 | 40 /* s or down arrow */ => {
         Direction::Down => {
             if ctx.direction == Direction::Up { return }
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (1..end_position.len()).step_by(2) {
-                end_position[i] = ((end_position[i]) / 10.).round() * 10. - STEP;
+                end_position[i] = ((end_position[i]) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT - STEP;
             }
-            Some(move_snake_2(ctx, &ctx.snake, &end_position))
+            Some(move_snake(ctx, &ctx.snake, &end_position))
         },
         // 65 | 97 | 37 /* a or left arrow */ => {
         Direction::Left => {
             if ctx.direction == Direction::Right { return }
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (0..end_position.len()).step_by(2) {
-                end_position[i] = ((end_position[i]) / 10.).round() * 10. - STEP;
+                end_position[i] = ((end_position[i]) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH - STEP;
             }
-            Some(move_snake_2(ctx, &ctx.snake, &end_position))
+            Some(move_snake(ctx, &ctx.snake, &end_position))
         },
         // 68 | 100 | 39 /* d or right arrow */ => {
         Direction::Right => {
             if ctx.direction == Direction::Left { return }
             let mut end_position = ctx.snake[0..12].to_vec();
             for i in (0..end_position.len()).step_by(2) {
-                end_position[i] = ((end_position[i]) / 10.).round() * 10. + STEP;
+                end_position[i] = ((end_position[i]) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH + STEP;
             }
-            Some(move_snake_2(ctx, &ctx.snake, &end_position))
+            Some(move_snake(ctx, &ctx.snake, &end_position))
         },
     };
 
@@ -591,11 +593,11 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
 #[inline(always)]
 fn movement_direction(previous: &[f32], next: &[f32]) -> Option<Direction>
 {
-    let previous_x = previous[0];
-    let previous_y = previous[1];
+    let previous_x = (previous[0] / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH;
+    let previous_y = (previous[1] / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT;
 
-    let next_x = next[0];
-    let next_y = next[1];
+    let next_x = (next[0] / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH;
+    let next_y = (next[1] / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT;
 
     let distance_x = previous_x - next_x;
     let distance_y = previous_y - next_y;
@@ -640,7 +642,8 @@ fn movement_direction(previous: &[f32], next: &[f32]) -> Option<Direction>
 }
 
 #[inline(always)]
-fn move_snake_2(
+fn move_snake
+(
     ctx: &Context,
     snake: &[f32],
     head_movement: &[f32]
@@ -654,32 +657,31 @@ fn move_snake_2(
         // current and the previous block.
 
         // Do mutations to 'previous_position' with correct direction.
-        let direction = movement_direction(&previous_position[..12], &snake[part..part + 12]);
-        match direction {
+        match movement_direction(&previous_position, &snake[part..part + 12]) {
             Some(Direction::Up) => {
                 for i in (1..previous_position.len()).step_by(2) {
-                    previous_position[i] = ((snake[part + i]) / 10.).round() * 10. + STEP;
+                    previous_position[i] = ((snake[part + i]) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT + STEP;
                 }
             }
             Some(Direction::Down) => {
                 for i in (1..previous_position.len()).step_by(2) {
-                    previous_position[i] = ((snake[part + i]) / 10.).round() * 10. - STEP;
+                    previous_position[i] = ((snake[part + i]) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT - STEP;
                 }
             }
             Some(Direction::Left) => {
                 for i in (0..previous_position.len()).step_by(2) {
-                    previous_position[i] = ((snake[part + i]) / 10.).round() * 10. - STEP;
+                    previous_position[i] = ((snake[part + i]) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH - STEP;
                 }
             }
             Some(Direction::Right) => {
                 for i in (0..previous_position.len()).step_by(2) {
-                    previous_position[i] = ((snake[part + i]) / 10.).round() * 10. + STEP;
+                    previous_position[i] = ((snake[part + i]) / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH + STEP;
                 }
             }
-            _ => { }
+            None => { }
         }
 
-        resulting_position[part..part + 12].copy_from_slice(&previous_position[..12]);
+        resulting_position[part..part + 12].copy_from_slice(&previous_position);
         block_exceeds_screen_edge
         (
             ctx,
@@ -688,20 +690,6 @@ fn move_snake_2(
         );
 
         previous_position = snake[part..part + 12].to_vec();
-    }
-
-    resulting_position
-}
-
-#[inline(always)]
-fn move_snake(snake: &[f32], head_movement: &[f32]) -> Vec<f32>
-{
-    let mut resulting_position = vec![0.; snake.len()];
-    let mut end_position       = head_movement.to_vec();
-
-    for part in (0..snake.len()).step_by(12) {
-        resulting_position[part..part + 12].copy_from_slice(&end_position[..12]);
-        end_position = snake[part..part + 12].to_vec();
     }
 
     resulting_position
