@@ -4,14 +4,7 @@ const port = process.env.PORT || "8080";
 
 app.use(express.json())
 
-app.use(
-    express.static('dist', {
-        setHeaders: function (res, path, stat) {
-            res.set('Cross-Origin-Embedder-Policy', 'require-corp');
-            res.set('Cross-Origin-Opener-Policy', 'same-origin');
-        },
-    })
-);
+app.use(express.static('dist'));
 
 const sqlite3 = require('sqlite3').verbose()
 const DB_SOURCE = 'db.sqlite'
