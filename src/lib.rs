@@ -170,13 +170,42 @@ fn start() -> Result<(), JsValue>
                     block_exceeds_screen_edge(&CTX, &mut CTX.snake[0..12], &mut resulting_position);
 
                     let snake_len = CTX.snake.len();
-
                     block_exceeds_screen_edge
                     (
                         &CTX,
                         &mut CTX.snake[snake_len - 12..snake_len],
                         &mut resulting_position
                     );
+
+                    // Fill out the preceding block of the tail.
+                    // This avoids having a gap in front of the tail block
+                    // when crossing the screen boundary.
+                    {
+                        let snake_len = CTX.snake.len();
+
+                        let x = CTX.snake[snake_len - 12];
+                        let y = CTX.snake[snake_len - 11];
+
+                        if x < 0. {
+                            let mut vertices = create_box(CTX.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                            resulting_position.append(&mut vertices);
+                        }
+
+                        if x + GRID_BOX_WIDTH > CTX.window_width {
+                            let mut vertices = create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                            resulting_position.append(&mut vertices);
+                        }
+
+                        if y < 0. {
+                            let mut vertices = create_box(x, CTX.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                            resulting_position.append(&mut vertices);
+                        }
+
+                        if y + GRID_BOX_HEIGHT > CTX.window_height {
+                            let mut vertices = create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                            resulting_position.append(&mut vertices);
+                        }
+                    }
                 }
 
                 !done
