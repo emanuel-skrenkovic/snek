@@ -5,32 +5,6 @@ use js_sys::Math::random;
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
 
-const GRID_WIDTH: usize  = 16;
-const GRID_HEIGHT: usize = 10;
-
-const GRID_BOX_WIDTH: f32 = 1280. / GRID_WIDTH as f32;
-const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
-
-const ANIMATION_DURATION: f64 = 200.;
-const STEP: f32 = GRID_BOX_WIDTH;
-
-const SNAKE_STARTING_LEN: usize = 4;
-
-const SNAKE_COLOUR: [f32; 3] = [0.1, 0.65, 0.1];
-const APPLE_COLOUR: [f32; 3] = [0.65, 0.1, 0.1];
-
-static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
-static mut PAUSED: bool = true;
-static mut GAME_OVER: bool = false;
-
-static mut CTX: Context = Context {
-    window_height: 0.0,
-    window_width: 0.0,
-    snake: vec![],
-    apple: None,
-    direction: Direction::Left,
-};
-
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -49,6 +23,26 @@ extern "C" {
     fn pause();
 }
 
+const GRID_WIDTH: usize  = 16;
+const GRID_HEIGHT: usize = 10;
+
+const GRID_BOX_WIDTH: f32 = 1280. / GRID_WIDTH as f32;
+const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
+
+const ANIMATION_DURATION: f64 = 200.;
+const STEP: f32 = GRID_BOX_WIDTH;
+
+const SNAKE_STARTING_LEN: usize = 4;
+
+const SNAKE_COLOUR: [f32; 3] = [0.1, 0.65, 0.1];
+const APPLE_COLOUR: [f32; 3] = [0.65, 0.1, 0.1];
+
+static mut KEYS: Vec<Direction>              = vec![];
+static mut QUEUED_ANIMATIONS: Vec<Animation> = vec![];
+
+static mut PAUSED: bool    = true;
+static mut GAME_OVER: bool = false;
+
 struct Context
 {
     window_height: f32,
@@ -64,6 +58,151 @@ enum Direction {
     Down,
     Left,
     Right
+}
+
+static mut CTX: Context = Context {
+    window_height: 0.0,
+    window_width: 0.0,
+    snake: vec![],
+    apple: None,
+    direction: Direction::Left,
+};
+
+#[derive(Debug)]
+struct Animation
+{
+    start_time: f64,
+    duration: f64,
+    start_position: Vec<f32>,
+    end_position: Vec<f32>,
+
+    is_paused: bool,
+
+    pause_start_time: f64,
+    pause_end_time: f64
+}
+
+impl Animation
+{
+    fn done(&self) -> bool
+    {
+        self.elapsed() >= self.duration
+    }
+
+    fn elapsed(&self) -> f64
+    {
+        let pause_duration = self.pause_end_time - self.pause_start_time;
+        now() - pause_duration - self.start_time
+    }
+}
+
+fn pause_animation(animation: &mut Animation)
+{
+    if animation.is_paused { return }
+    if animation.pause_start_time == 0. {
+        animation.pause_start_time = now();
+    }
+    animation.is_paused = true;
+}
+
+fn unpause_animation(animation: &mut Animation)
+{
+    if !animation.is_paused { return }
+    animation.pause_end_time = now();
+    animation.is_paused = false;
+}
+
+unsafe fn initiate_game(window_width: f32, window_height: f32)
+{
+    PAUSED    = true;
+    GAME_OVER = false;
+
+    QUEUED_ANIMATIONS.clear();
+
+    CTX.snake = vec![];
+
+    // Start off by going left.
+    KEYS.clear();
+    KEYS.push(Direction::Left);
+    CTX.direction = Direction::Left;
+
+    for i in 0..SNAKE_STARTING_LEN {
+        let mut part = create_box
+            (
+                (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) + (i as f32 * GRID_BOX_WIDTH),
+                ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
+                GRID_BOX_WIDTH,
+                GRID_BOX_HEIGHT,
+            );
+
+        CTX.snake.append(&mut part);
+    }
+
+    CTX.apple = Some(spawn_apple(&CTX));
+}
+
+/// Stores the event into the global state that holds all
+/// queued events. This is used for the 'keypress' dom event.
+#[wasm_bindgen]
+pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
+{
+    match event.key_code() {
+        // w
+        119 | 87 | 38 => {
+            if CTX.direction == Direction::Down { return }
+            if !KEYS.contains(&Direction::Up) && !KEYS.contains(&Direction::Down) {
+                KEYS.clear();
+                KEYS.push(Direction::Up)
+            }
+        }
+
+        // s
+        115 | 83 | 40 => {
+            if CTX.direction == Direction::Up { return }
+            if !KEYS.contains(&Direction::Down) && !KEYS.contains(&Direction::Up) {
+                KEYS.clear();
+                KEYS.push(Direction::Down)
+            }
+        }
+
+        // d
+        100 | 68 | 39 => {
+            if CTX.direction == Direction::Left { return }
+            if !KEYS.contains(&Direction::Right) && !KEYS.contains(&Direction::Left) {
+                KEYS.clear();
+                KEYS.push(Direction::Right)
+            }
+        }
+
+        // a
+        97 | 65 | 37 => {
+            if CTX.direction == Direction::Right { return }
+            if !KEYS.contains(&Direction::Left) && !KEYS.contains(&Direction::Right) {
+                KEYS.clear();
+                KEYS.push(Direction::Left)
+            }
+        }
+
+        32 => {
+            let previously_paused = PAUSED;
+            PAUSED = !PAUSED;
+            match previously_paused {
+                true => {
+                    clear_screen();
+                    for animation in QUEUED_ANIMATIONS.iter_mut() {
+                        unpause_animation(animation);
+                    }
+                }
+                false => {
+                    pause();
+                    for animation in QUEUED_ANIMATIONS.iter_mut() {
+                        pause_animation(animation);
+                    }
+                }
+            }
+        }
+        _ => ()
+    }
 }
 
 #[wasm_bindgen(start)]
@@ -270,6 +409,18 @@ fn start() -> Result<(), JsValue>
     Ok(())
 }
 
+fn window() -> web_sys::Window
+{
+    web_sys::window().expect("no global `window` exists")
+}
+
+fn request_animation_frame(f: &Closure<dyn FnMut()>)
+{
+    window()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
+}
+
 #[inline(always)]
 fn spawn_apple(ctx: &Context) -> (f32, f32)
 {
@@ -375,35 +526,6 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
     ctx.snake = end_position;
 }
 
-unsafe fn initiate_game(window_width: f32, window_height: f32)
-{
-    PAUSED    = true;
-    GAME_OVER = false;
-
-    QUEUED_ANIMATIONS.clear();
-
-    CTX.snake = vec![];
-
-    // Start off by going left.
-    KEYS.clear();
-    KEYS.push(Direction::Left);
-    CTX.direction = Direction::Left;
-
-    for i in 0..SNAKE_STARTING_LEN {
-        let mut part = create_box
-        (
-            (((window_width / 2.) / GRID_BOX_WIDTH).round() *  GRID_BOX_WIDTH) + (i as f32 * GRID_BOX_WIDTH),
-            ((window_height / 2.) / GRID_BOX_HEIGHT).round() * GRID_BOX_HEIGHT,
-            GRID_BOX_WIDTH,
-            GRID_BOX_HEIGHT,
-        );
-
-        CTX.snake.append(&mut part);
-    }
-
-    CTX.apple = Some(spawn_apple(&CTX));
-}
-
 #[inline(always)]
 fn block_exceeds_screen_edge
 (
@@ -483,6 +605,7 @@ fn box_collision(one: &[f32], two: &[f32]) -> bool
     collision_x && collision_y
 }
 
+/// Returns a boolean saying whether the snake head hid the body.
 #[inline(always)]
 fn collisions(ctx: &Context) -> bool
 {
@@ -501,42 +624,6 @@ fn did_the_snek_eat_the_apple(ctx: &Context) -> bool
     let Some(apple) = ctx.apple else { return false };
     let apple_box = create_box(apple.0, apple.1, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
     box_collision(&ctx.snake[0..12], &apple_box)
-}
-
-#[allow(dead_code)]
-fn format_coordinates(coordinates: &[f32]) -> String {
-    let mut formatted_string = String::new();
-
-    for i in 0..coordinates.len() / 2 {
-        let x = coordinates[i * 2];
-        let y = coordinates[i * 2 + 1];
-
-        let pair = format!("({:.1}, {:.1})", x, y);
-
-        if i > 0 {
-            formatted_string.push_str(", ");
-        }
-
-        formatted_string.push_str(&pair);
-    }
-
-    formatted_string
-}
-
-fn pause_animation(animation: &mut Animation)
-{
-    if animation.is_paused { return }
-    if animation.pause_start_time == 0. {
-        animation.pause_start_time = now();
-    }
-    animation.is_paused = true;
-}
-
-fn unpause_animation(animation: &mut Animation)
-{
-    if !animation.is_paused { return }
-    animation.pause_end_time = now();
-    animation.is_paused = false;
 }
 
 fn now() -> f64
@@ -558,48 +645,8 @@ fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
     ]
 }
 
-#[derive(Debug)]
-struct Animation
-{
-    start_time: f64,
-    duration: f64,
-    start_position: Vec<f32>,
-    end_position: Vec<f32>,
-
-    is_paused: bool,
-
-    pause_start_time: f64,
-    pause_end_time: f64
-}
-
-impl Animation
-{
-    fn done(&self) -> bool
-    {
-        self.elapsed() >= self.duration
-    }
-
-    fn elapsed(&self) -> f64
-    {
-        let pause_duration = self.pause_end_time - self.pause_start_time;
-        now() - pause_duration - self.start_time
-    }
-}
-
-static mut KEYS: Vec<Direction> = vec![];
-
-fn window() -> web_sys::Window
-{
-    web_sys::window().expect("no global `window` exists")
-}
-
-fn request_animation_frame(f: &Closure<dyn FnMut()>)
-{
-    window()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .expect("should register `requestAnimationFrame` OK");
-}
-
+/// For every registered key, creates an animation of the movement,
+/// if the key results in an animation.
 fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Direction)
 {
     if !animations.is_empty() { return }
@@ -664,6 +711,8 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
     }
 }
 
+/// Returns the movement direction between two snake parts.
+/// Or None I guess.
 #[inline(always)]
 fn movement_direction(previous: &[f32], next: &[f32]) -> Option<Direction>
 {
@@ -715,6 +764,10 @@ fn movement_direction(previous: &[f32], next: &[f32]) -> Option<Direction>
     None
 }
 
+/// Creates a vec containing the resulting position of
+/// a movement command.
+/// The resulting vec contains the positions of all
+/// parts of the snake.
 #[inline(always)]
 fn move_snake
 (
@@ -769,69 +822,7 @@ fn move_snake
     resulting_position
 }
 
-/// Stores the event into the global state that holds all
-/// queued events. This is used for the 'keypress' dom event.
-#[wasm_bindgen]
-pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
-{
-    match event.key_code() {
-        // w
-        119 | 87 | 38 => {
-            if CTX.direction == Direction::Down { return }
-            if !KEYS.contains(&Direction::Up) && !KEYS.contains(&Direction::Down) {
-                KEYS.clear();
-                KEYS.push(Direction::Up)
-            }
-        }
-
-        // s
-        115 | 83 | 40 => {
-            if CTX.direction == Direction::Up { return }
-            if !KEYS.contains(&Direction::Down) && !KEYS.contains(&Direction::Up) {
-                KEYS.clear();
-                KEYS.push(Direction::Down)
-            }
-        }
-
-        // d
-        100 | 68 | 39 => {
-            if CTX.direction == Direction::Left { return }
-            if !KEYS.contains(&Direction::Right) && !KEYS.contains(&Direction::Left) {
-                KEYS.clear();
-                KEYS.push(Direction::Right)
-            }
-        }
-
-        // a
-        97 | 65 | 37 => {
-            if CTX.direction == Direction::Right { return }
-            if !KEYS.contains(&Direction::Left) && !KEYS.contains(&Direction::Right) {
-                KEYS.clear();
-                KEYS.push(Direction::Left)
-            }
-        }
-
-        32 => {
-            let previously_paused = PAUSED;
-            PAUSED = !PAUSED;
-            match previously_paused {
-                true => {
-                    clear_screen();
-                    for animation in QUEUED_ANIMATIONS.iter_mut() {
-                        unpause_animation(animation);
-                    }
-                }
-                false => {
-                    pause();
-                    for animation in QUEUED_ANIMATIONS.iter_mut() {
-                        pause_animation(animation);
-                    }
-                }
-            }
-        }
-        _ => ()
-    }
-}
+// GL Code
 
 fn draw_vertices
 (
@@ -952,4 +943,26 @@ pub fn link_program
                 .unwrap_or_else(|| String::from("Unknown error creating program object"))
         )
     }
+}
+
+// Utility
+
+#[allow(dead_code)]
+fn format_coordinates(coordinates: &[f32]) -> String {
+    let mut formatted_string = String::new();
+
+    for i in 0..coordinates.len() / 2 {
+        let x = coordinates[i * 2];
+        let y = coordinates[i * 2 + 1];
+
+        let pair = format!("({:.1}, {:.1})", x, y);
+
+        if i > 0 {
+            formatted_string.push_str(", ");
+        }
+
+        formatted_string.push_str(&pair);
+    }
+
+    formatted_string
 }
