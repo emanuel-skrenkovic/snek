@@ -1,9 +1,12 @@
+mod render;
+mod webgl_render;
+
 use std::rc::Rc;
 use std::cell::RefCell;
 
 use js_sys::Math::random;
 use wasm_bindgen::prelude::*;
-use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
+use crate::webgl_render::new;
 
 #[wasm_bindgen]
 extern "C" {
@@ -206,70 +209,9 @@ pub unsafe fn key_press_event(event: web_sys::KeyboardEvent)
 }
 
 #[wasm_bindgen(start)]
-fn start() -> Result<(), JsValue>
+unsafe fn start() -> Result<(), JsValue>
 {
-    let window = web_sys::window().unwrap();
-
-    let document = window.document().unwrap();
-    let canvas = document.get_element_by_id("canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into::<web_sys::HtmlCanvasElement>()?;
-
-    let context = canvas
-        .get_context("webgl2")?
-        .unwrap()
-        .dyn_into::<WebGl2RenderingContext>()?;
-
-    context.viewport(0, 0, 1280, 800);
-
-    let vertex_shader = compile_shader
-    (
-        &context,
-        WebGl2RenderingContext::VERTEX_SHADER,
-        r##"#version 300 es
-
-        uniform vec2 resolution;
-
-        in vec2 position;
-
-        in vec3 vertexColour;
-        out vec3 fragmentColour;
-
-        void main() {
-            fragmentColour = vertexColour;
-
-            vec2 zeroToOne = position / resolution;
-            vec2 zeroToTwo = zeroToOne * 2.0;
-            vec2 clipSpace = zeroToTwo - 1.0;
-            gl_Position = vec4(clipSpace, 0, 1);
-        }
-        "##,
-    )?;
-
-    let fragment_shader = compile_shader
-    (
-        &context,
-        WebGl2RenderingContext::FRAGMENT_SHADER,
-        r##"#version 300 es
-
-        precision highp float;
-
-        in vec3 fragmentColour;
-        out vec4 outColour;
-
-        void main() {
-            outColour = vec4(fragmentColour, 1.0);
-        }
-        "##
-    )?;
-
-    let program = link_program(&context, &vertex_shader, &fragment_shader)?;
-    context.use_program(Some(&program));
-
-    let window_width = canvas.width() as f32;
-    let window_height = canvas.height() as f32;
-
-    let resolution_location = context.get_uniform_location(&program, "resolution").unwrap();
-    context.uniform2f(Some(&resolution_location), window_width, window_height);
+    let renderer = new();
 
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
@@ -277,134 +219,124 @@ fn start() -> Result<(), JsValue>
     let mut resulting_position = Vec::with_capacity(2000);
     let mut colours            = Vec::with_capacity(4000);
 
-    unsafe {
-        CTX = Context {
-            window_width,
-            window_height,
-            snake: vec![],
-            apple: None,
-            direction: Direction::Left
-        };
+    let window_width = renderer.window_width();
+    let window_height = renderer.window_height();
 
-        initiate_game(window_width, window_height);
+    CTX = Context {
+        window_width,
+        window_height,
+        snake: vec![],
+        apple: None,
+        direction: Direction::Left
+    };
 
-        *g.borrow_mut() = Some(Closure::new(move || {
-            if PAUSED {
-                request_animation_frame(f.borrow().as_ref().unwrap());
-                return
-            }
+    initiate_game(window_width, window_height);
 
-            for active_key in &KEYS {
-                handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
-            }
+    *g.borrow_mut() = Some(Closure::new(move || {
+        if PAUSED {
+            request_animation_frame(f.borrow().as_ref().unwrap());
+            return
+        }
 
-            QUEUED_ANIMATIONS.retain(|a| {
-                let done = a.done();
+        for active_key in &KEYS {
+            handle_key_action(&mut CTX, &mut QUEUED_ANIMATIONS, *active_key);
+        }
 
-                // Finish off the animation movement if it has ended.
-                // This is to avoid misalignment of the snake end position
-                // if the frame rate does not match the animation end time.
-                if done {
-                    CTX.snake[0..12].copy_from_slice(&a.end_position[0..12]);
-                    block_exceeds_screen_edge(&CTX, &mut CTX.snake[0..12], &mut resulting_position);
+        QUEUED_ANIMATIONS.retain(|a| {
+            let done = a.done();
 
+            // Finish off the animation movement if it has ended.
+            // This is to avoid misalignment of the snake end position
+            // if the frame rate does not match the animation end time.
+            if done {
+                CTX.snake[0..12].copy_from_slice(&a.end_position[0..12]);
+                block_exceeds_screen_edge(&CTX, &mut CTX.snake[0..12], &mut resulting_position);
+
+                let snake_len = CTX.snake.len();
+                block_exceeds_screen_edge
+                (
+                    &CTX,
+                    &mut CTX.snake[snake_len - 12..snake_len],
+                    &mut resulting_position
+                );
+
+                // Fill out the preceding block of the tail.
+                // This avoids having a gap in front of the tail block
+                // when crossing the screen boundary.
+                {
                     let snake_len = CTX.snake.len();
-                    block_exceeds_screen_edge
-                    (
-                        &CTX,
-                        &mut CTX.snake[snake_len - 12..snake_len],
-                        &mut resulting_position
-                    );
 
-                    // Fill out the preceding block of the tail.
-                    // This avoids having a gap in front of the tail block
-                    // when crossing the screen boundary.
-                    {
-                        let snake_len = CTX.snake.len();
+                    let x = CTX.snake[snake_len - 12];
+                    let y = CTX.snake[snake_len - 11];
 
-                        let x = CTX.snake[snake_len - 12];
-                        let y = CTX.snake[snake_len - 11];
+                    if x < 0. {
+                        let mut vertices = create_box(CTX.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                        resulting_position.append(&mut vertices);
+                    }
 
-                        if x < 0. {
-                            let mut vertices = create_box(CTX.window_width - GRID_BOX_WIDTH, y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                            resulting_position.append(&mut vertices);
-                        }
+                    if x + GRID_BOX_WIDTH > CTX.window_width {
+                        let mut vertices = create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                        resulting_position.append(&mut vertices);
+                    }
 
-                        if x + GRID_BOX_WIDTH > CTX.window_width {
-                            let mut vertices = create_box(0., y, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                            resulting_position.append(&mut vertices);
-                        }
+                    if y < 0. {
+                        let mut vertices = create_box(x, CTX.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                        resulting_position.append(&mut vertices);
+                    }
 
-                        if y < 0. {
-                            let mut vertices = create_box(x, CTX.window_height - GRID_BOX_HEIGHT, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                            resulting_position.append(&mut vertices);
-                        }
-
-                        if y + GRID_BOX_HEIGHT > CTX.window_height {
-                            let mut vertices = create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-                            resulting_position.append(&mut vertices);
-                        }
+                    if y + GRID_BOX_HEIGHT > CTX.window_height {
+                        let mut vertices = create_box(x, 0., GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+                        resulting_position.append(&mut vertices);
                     }
                 }
-
-                !done
-            });
-
-            if did_the_snek_eat_the_apple(&CTX) {
-                let snake_len = CTX.snake.len();
-                CTX.snake.append
-                (
-                    &mut create_box
-                    (
-                        CTX.snake[snake_len - 12],
-                        CTX.snake[snake_len - 11],
-                        GRID_BOX_WIDTH,
-                        GRID_BOX_HEIGHT
-                    )
-                );
-                CTX.apple = Some(spawn_apple(&CTX));
-                scored(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
             }
 
-            if collisions(&CTX) {
-                GAME_OVER = true;
-                game_over(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
-                initiate_game(window_width, window_height);
-            }
+            !done
+        });
 
-            snake_movement(&mut CTX, &QUEUED_ANIMATIONS, &mut resulting_position);
-
-            colours.append(&mut SNAKE_COLOUR.repeat(resulting_position.len() / 2));
-
-            if let Some(apple) = CTX.apple {
-                let mut apple_vertices = create_box(apple.0, apple.1, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
-
-                colours.append(&mut APPLE_COLOUR.repeat(apple_vertices.len() / 2));
-                resulting_position.append(&mut apple_vertices);
-            }
-
-            let vertices_count = resulting_position.len() / 2;
-            let vertices_count= vertices_count as i32;
-
-            // Background colour.
-            context.clear_color(0.1, 0.2, 0.1, 1.0);
-            context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-
-            draw_vertices
+        if did_the_snek_eat_the_apple(&CTX) {
+            let snake_len = CTX.snake.len();
+            CTX.snake.append
             (
-                &context,
-                &program,
-                resulting_position.drain(..).as_slice(),
-                colours.drain(..).as_slice()
-            ).expect("Drawing failed");
+                &mut create_box
+                (
+                    CTX.snake[snake_len - 12],
+                    CTX.snake[snake_len - 11],
+                    GRID_BOX_WIDTH,
+                    GRID_BOX_HEIGHT
+                )
+            );
+            CTX.apple = Some(spawn_apple(&CTX));
+            scored(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
+        }
 
-            context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vertices_count);
+        if collisions(&CTX) {
+            GAME_OVER = true;
+            game_over(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
+            initiate_game(window_width, window_height);
+        }
 
-            request_animation_frame(f.borrow().as_ref().unwrap());
-        }));
+        snake_movement(&mut CTX, &QUEUED_ANIMATIONS, &mut resulting_position);
 
-        request_animation_frame(g.borrow().as_ref().unwrap());
-    }
+        colours.append(&mut SNAKE_COLOUR.repeat(resulting_position.len() / 2));
+
+        if let Some(apple) = CTX.apple {
+            let mut apple_vertices = create_box(apple.0, apple.1, GRID_BOX_WIDTH, GRID_BOX_HEIGHT);
+
+            colours.append(&mut APPLE_COLOUR.repeat(apple_vertices.len() / 2));
+            resulting_position.append(&mut apple_vertices);
+        }
+
+        renderer.draw_vertices
+        (
+            resulting_position.drain(..).as_slice(),
+            colours.drain(..).as_slice()
+        );
+
+        request_animation_frame(f.borrow().as_ref().unwrap());
+    }));
+
+    request_animation_frame(g.borrow().as_ref().unwrap());
 
     Ok(())
 }
@@ -820,129 +752,6 @@ fn move_snake
     }
 
     resulting_position
-}
-
-// GL Code
-
-fn draw_vertices
-(
-    context: &WebGl2RenderingContext,
-    program: &WebGlProgram,
-    vertices: &[f32],
-    colours: &[f32]
-) -> Result<(), String>
-{
-    let vao = context.create_vertex_array().ok_or("Failed to create vertex array object")?;
-    context.bind_vertex_array(Some(&vao));
-
-    // Position
-
-    {
-        let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
-        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
-
-        let array_buf = js_sys::Float32Array::new_with_length(vertices.len() as u32);
-        array_buf.copy_from(vertices);
-
-        context.buffer_data_with_array_buffer_view
-        (
-            WebGl2RenderingContext::ARRAY_BUFFER,
-            &array_buf,
-            WebGl2RenderingContext::DYNAMIC_DRAW,
-        );
-
-        let attrib_location = context.get_attrib_location(program, "position") as u32;
-        context.vertex_attrib_pointer_with_i32
-        (
-            attrib_location, 2, WebGl2RenderingContext::FLOAT, false, 0, 0
-        );
-        context.enable_vertex_attrib_array(attrib_location);
-    }
-
-    // Colour
-
-    {
-        let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
-        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
-
-        let array_buf = js_sys::Float32Array::new_with_length(colours.len() as u32);
-        array_buf.copy_from(colours);
-
-        context.buffer_data_with_array_buffer_view
-        (
-            WebGl2RenderingContext::ARRAY_BUFFER,
-            &array_buf,
-            WebGl2RenderingContext::DYNAMIC_DRAW,
-        );
-
-        let attrib_location = context.get_attrib_location(program, "vertexColour") as u32;
-        context.vertex_attrib_pointer_with_i32
-        (
-            attrib_location, 3, WebGl2RenderingContext::FLOAT, false, 0, 0
-        );
-        context.enable_vertex_attrib_array(attrib_location);
-    }
-
-    Ok(())
-}
-
-pub fn compile_shader
-(
-    context: &WebGl2RenderingContext,
-    shader_type: u32,
-    source: &str
-) -> Result<WebGlShader, String>
-{
-    let shader = context
-        .create_shader(shader_type)
-        .ok_or_else(|| String::from("Unable to create shader object"))?;
-
-    context.shader_source(&shader, source);
-    context.compile_shader(&shader);
-
-    let compiled = context
-        .get_shader_parameter(&shader, WebGl2RenderingContext::COMPILE_STATUS)
-        .as_bool()
-        .unwrap_or(false);
-
-    match compiled {
-        true  => Ok(shader),
-        false => Err(
-            context
-                .get_shader_info_log(&shader)
-                .unwrap_or_else(|| String::from("Unknown error creating shader"))
-        )
-    }
-}
-
-pub fn link_program
-(
-    context: &WebGl2RenderingContext,
-    vertex_shader: &WebGlShader,
-    fragment_shader: &WebGlShader,
-) -> Result<WebGlProgram, String>
-{
-    let program = context
-        .create_program()
-        .ok_or_else(|| String::from("Unable to create program"))?;
-
-    context.attach_shader(&program, vertex_shader);
-    context.attach_shader(&program, fragment_shader);
-
-    context.link_program(&program);
-
-    let program_linked = context
-        .get_program_parameter(&program, WebGl2RenderingContext::LINK_STATUS)
-        .as_bool()
-        .unwrap_or(false);
-
-    match program_linked {
-        true  => Ok(program),
-        false => Err(
-            context.get_program_info_log(&program)
-                .unwrap_or_else(|| String::from("Unknown error creating program object"))
-        )
-    }
 }
 
 // Utility
