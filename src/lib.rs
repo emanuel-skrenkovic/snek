@@ -421,7 +421,6 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>)
         .expect("should register `requestAnimationFrame` OK");
 }
 
-#[inline(always)]
 fn spawn_apple(ctx: &Context) -> (f32, f32)
 {
     let vertical_blocks   = GRID_WIDTH / GRID_BOX_WIDTH as usize;
@@ -453,7 +452,6 @@ fn spawn_apple(ctx: &Context) -> (f32, f32)
     (unoccupied[position].0, unoccupied[position].1)
 }
 
-#[inline(always)]
 fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_position: &mut Vec<f32>)
 {
     let mut end_position = ctx.snake.clone();
@@ -526,7 +524,6 @@ fn snake_movement(ctx: &mut Context, animations: &[Animation], resulting_positio
     ctx.snake = end_position;
 }
 
-#[inline(always)]
 fn block_exceeds_screen_edge
 (
     ctx: &Context,
@@ -592,7 +589,6 @@ fn block_exceeds_screen_edge
 
 // AABB vs AABB
 // https://developer.mozilla.org/en-US/docs/Games/Techniques/3D_collision_detection#aabb_vs._aabb
-#[inline(always)]
 fn box_collision(one: &[f32], two: &[f32]) -> bool
 {
     // a.minX <= b.maxX &&
@@ -606,7 +602,6 @@ fn box_collision(one: &[f32], two: &[f32]) -> bool
 }
 
 /// Returns a boolean saying whether the snake head hid the body.
-#[inline(always)]
 fn collisions(ctx: &Context) -> bool
 {
     let head = &ctx.snake[0..12];
@@ -618,7 +613,6 @@ fn collisions(ctx: &Context) -> bool
 }
 
 // Head <-> apple collision
-#[inline(always)]
 fn did_the_snek_eat_the_apple(ctx: &Context) -> bool
 {
     let Some(apple) = ctx.apple else { return false };
@@ -631,7 +625,6 @@ fn now() -> f64
     js_sys::Date::now()
 }
 
-#[inline(always)]
 fn create_box(x: f32, y: f32, width: f32, height: f32) -> Vec<f32>
 {
     vec![
@@ -713,7 +706,6 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
 
 /// Returns the movement direction between two snake parts.
 /// Or None I guess.
-#[inline(always)]
 fn movement_direction(previous: &[f32], next: &[f32]) -> Option<Direction>
 {
     let previous_x = (previous[0] / GRID_BOX_WIDTH).round() * GRID_BOX_WIDTH;
@@ -768,7 +760,6 @@ fn movement_direction(previous: &[f32], next: &[f32]) -> Option<Direction>
 /// a movement command.
 /// The resulting vec contains the positions of all
 /// parts of the snake.
-#[inline(always)]
 fn move_snake
 (
     ctx: &Context,
