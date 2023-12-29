@@ -1,7 +1,10 @@
 const rust = import('./pkg')
 
 const name_input = (score) =>
-    overlay().innerHTML = `<label>Score: ${score}</label><br>Press space to start again!`;
+    overlay().innerHTML = `
+        <label>Score: ${score}</label>
+        <br>
+        Press space to start again!`;
 
 
 window.scored       = (score) => overlay().innerHTML = `Score: ${score}`
