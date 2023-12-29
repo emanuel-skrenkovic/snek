@@ -1,0 +1,41 @@
+<html lang="en">
+    <head>
+        <title>snek</title>
+        <meta content="text/html;charset=utf-8" http-equiv="Content-Type"/>
+    <script defer src="index.js"></script></head>
+    <style>
+        body {
+            font-family: "Verdana", sans-serif;
+        }
+
+        canvas {
+            margin: 5em auto auto;
+            display: block;
+            z-index: 1;
+        }
+
+        #container {
+            position: fixed;
+            width: 100%;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #overlay {
+            position: absolute;
+            transform: translate(30%);
+            margin: 5em auto auto;
+            z-index: 2;
+            font-size: 24px;
+            font-family: "Verdana", sans-serif;
+            color: black;
+        }
+    </style>
+    <body>
+        <div id="container">
+            <div id="overlay"></div>
+            <canvas id="canvas" width="1280" height="800"></canvas>
+        </div>
+    </body>
+</html>
