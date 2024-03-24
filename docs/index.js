@@ -58,7 +58,7 @@ eval("const rust = Promise.all(/*! import() */[__webpack_require__.e(\"vendors-n
 /******/ 		var webpackExports = typeof Symbol === "function" ? Symbol("webpack exports") : "__webpack_exports__";
 /******/ 		var webpackError = typeof Symbol === "function" ? Symbol("webpack error") : "__webpack_error__";
 /******/ 		var resolveQueue = (queue) => {
-/******/ 			if(queue && !queue.d) {
+/******/ 			if(queue && queue.d < 1) {
 /******/ 				queue.d = 1;
 /******/ 				queue.forEach((fn) => (fn.r--));
 /******/ 				queue.forEach((fn) => (fn.r-- ? fn.r++ : fn()));
@@ -89,7 +89,7 @@ eval("const rust = Promise.all(/*! import() */[__webpack_require__.e(\"vendors-n
 /******/ 		}));
 /******/ 		__webpack_require__.a = (module, body, hasAwait) => {
 /******/ 			var queue;
-/******/ 			hasAwait && ((queue = []).d = 1);
+/******/ 			hasAwait && ((queue = []).d = -1);
 /******/ 			var depQueues = new Set();
 /******/ 			var exports = module.exports;
 /******/ 			var currentDeps;
@@ -117,7 +117,7 @@ eval("const rust = Promise.all(/*! import() */[__webpack_require__.e(\"vendors-n
 /******/ 				});
 /******/ 				return fn.r ? promise : getResult();
 /******/ 			}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
-/******/ 			queue && (queue.d = 0);
+/******/ 			queue && queue.d < 0 && (queue.d = 0);
 /******/ 		};
 /******/ 	})();
 /******/ 	
@@ -212,6 +212,7 @@ eval("const rust = Promise.all(/*! import() */[__webpack_require__.e(\"vendors-n
 /******/ 					script.setAttribute("nonce", __webpack_require__.nc);
 /******/ 				}
 /******/ 		
+/******/ 		
 /******/ 				script.src = url;
 /******/ 			}
 /******/ 			inProgress[url] = [done];
@@ -247,14 +248,26 @@ eval("const rust = Promise.all(/*! import() */[__webpack_require__.e(\"vendors-n
 /******/ 	(() => {
 /******/ 		__webpack_require__.v = (exports, wasmModuleId, wasmModuleHash, importsObj) => {
 /******/ 			var req = fetch(__webpack_require__.p + "" + wasmModuleHash + ".module.wasm");
-/******/ 			if (typeof WebAssembly.instantiateStreaming === 'function') {
-/******/ 				return WebAssembly.instantiateStreaming(req, importsObj)
-/******/ 					.then((res) => (Object.assign(exports, res.instance.exports)));
-/******/ 			}
-/******/ 			return req
+/******/ 			var fallback = () => (req
 /******/ 				.then((x) => (x.arrayBuffer()))
 /******/ 				.then((bytes) => (WebAssembly.instantiate(bytes, importsObj)))
-/******/ 				.then((res) => (Object.assign(exports, res.instance.exports)));
+/******/ 				.then((res) => (Object.assign(exports, res.instance.exports))));
+/******/ 			return req.then((res) => {
+/******/ 				if (typeof WebAssembly.instantiateStreaming === "function") {
+/******/ 					return WebAssembly.instantiateStreaming(res, importsObj)
+/******/ 						.then(
+/******/ 							(res) => (Object.assign(exports, res.instance.exports)),
+/******/ 							(e) => {
+/******/ 								if(res.headers.get("Content-Type") !== "application/wasm") {
+/******/ 									console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
+/******/ 									return fallback();
+/******/ 								}
+/******/ 								throw e;
+/******/ 							}
+/******/ 						);
+/******/ 				}
+/******/ 				return fallback();
+/******/ 			});
 /******/ 		};
 /******/ 	})();
 /******/ 	
@@ -270,7 +283,7 @@ eval("const rust = Promise.all(/*! import() */[__webpack_require__.e(\"vendors-n
 /******/ 				var scripts = document.getElementsByTagName("script");
 /******/ 				if(scripts.length) {
 /******/ 					var i = scripts.length - 1;
-/******/ 					while (i > -1 && !scriptUrl) scriptUrl = scripts[i--].src;
+/******/ 					while (i > -1 && (!scriptUrl || !/^http(s?):/.test(scriptUrl))) scriptUrl = scripts[i--].src;
 /******/ 				}
 /******/ 			}
 /******/ 		}
