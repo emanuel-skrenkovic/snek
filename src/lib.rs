@@ -29,7 +29,8 @@ const GRID_HEIGHT: usize = 10;
 const GRID_BOX_WIDTH: f32 = 1280. / GRID_WIDTH as f32;
 const GRID_BOX_HEIGHT: f32 = 800. / GRID_HEIGHT as f32;
 
-const ANIMATION_DURATION: f64 = 200.;
+static mut ANIMATION_DURATION: f64 = 220.;
+
 const STEP: f32 = GRID_BOX_WIDTH;
 
 const SNAKE_STARTING_LEN: usize = 4;
@@ -364,6 +365,8 @@ fn start() -> Result<(), JsValue>
                 );
                 CTX.apple = Some(spawn_apple(&CTX));
                 scored(CTX.snake.len() / 12 - SNAKE_STARTING_LEN);
+
+                ANIMATION_DURATION *= 0.975;
             }
 
             if collisions(&CTX) {
@@ -689,9 +692,9 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
 
     if let Some(resulting_position) = resulting_position {
         ctx.direction = key;
-        animations.push
-        (
-            Animation {
+
+        unsafe {
+            let animation = Animation {
                 start_time: now(),
                 duration: ANIMATION_DURATION,
                 start_position: ctx.snake.clone(),
@@ -699,8 +702,9 @@ fn handle_key_action(ctx: &mut Context, animations: &mut Vec<Animation>, key: Di
                 is_paused: false,
                 pause_start_time: 0.,
                 pause_end_time: 0.
-            }
-        );
+            };
+            animations.push(animation);
+        }
     }
 }
 
